@@ -8,13 +8,12 @@ import { ChatBox } from '../../src/panel/ChatBox';
 import { QuestionView } from '../../src/panel/QuestionView';
 import { ReflectionForm } from '../../src/panel/ReflectionForm';
 import { SettingsPanel } from '../../src/panel/SettingsPanel';
-import { TTSControls, useVoices } from '../../src/panel/TTSControls';
+import { TTSControls } from '../../src/panel/TTSControls';
 import { useStore } from '../../src/state/store';
 import { streakStats, upsertQuestion } from '../../src/storage/db';
 import { loadSettings, watchSettings } from '../../src/storage/settings';
 import { createOpenRouterTTS, SentenceStream } from '../../src/tts/openrouter';
 import { getActiveProvider, setActiveProvider, stopAll } from '../../src/tts/provider';
-import { webSpeechProvider } from '../../src/tts/webSpeech';
 
 type Tab = 'study' | 'settings';
 
@@ -39,7 +38,6 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const ttsAbort = useRef<AbortController | null>(null);
   const lastAutoReadHash = useRef<string | null>(null);
-  const voices = useVoices(settings.ttsProvider);
 
   useEffect(() => {
     console.log('[ubuddy:panel] mount');
@@ -61,16 +59,12 @@ export function App() {
     });
   }, [setSettings, setStreak]);
 
-  // Set up TTS provider based on settings.
+  // Set up TTS provider — OpenRouter is the only supported provider.
   useEffect(() => {
-    if (settings.ttsProvider === 'openrouter' && settings.openrouterApiKey) {
-      console.log('[ubuddy:panel] TTS provider: openrouter');
-      setActiveProvider(createOpenRouterTTS({ apiKey: settings.openrouterApiKey }));
-    } else {
-      console.log('[ubuddy:panel] TTS provider: webspeech');
-      setActiveProvider(webSpeechProvider);
-    }
-  }, [settings.ttsProvider, settings.openrouterApiKey]);
+    if (!settings.openrouterApiKey) return;
+    console.log('[ubuddy:panel] TTS provider: openrouter');
+    setActiveProvider(createOpenRouterTTS({ apiKey: settings.openrouterApiKey }));
+  }, [settings.openrouterApiKey]);
 
   // Listen to runtime messages from content script + background.
   useEffect(() => {
@@ -251,7 +245,7 @@ export function App() {
             </div>
           )}
           {error && <div className="banner banner--err">{error}</div>}
-          <TTSControls voices={voices} onRead={readNow} onStop={stopReading} />
+          <TTSControls onRead={readNow} onStop={stopReading} />
           <QuestionView />
           <AnswerList onPick={onPick} />
           {showCelebration && <Celebration />}
@@ -291,15 +285,20 @@ function ttsOpts(settings: ReturnType<typeof useStore.getState>['settings']) {
 }
 
 async function speak(text: string, settings: ReturnType<typeof useStore.getState>['settings']) {
-  const provider = getActiveProvider() ?? webSpeechProvider;
-  await provider.speak(text, ttsOpts(settings));
+  const provider = getActiveProvider();
+  if (!provider) throw new Error('Add your OpenRouter API key in Settings to enable TTS.');
+  const opts = ttsOpts(settings);
+  console.log('[ubuddy:panel] speak via', provider.name, 'rate=', opts.rate);
+  await provider.speak(text, opts);
 }
 
 function speakChunk(text: string, settings: ReturnType<typeof useStore.getState>['settings']) {
-  const provider = getActiveProvider() ?? webSpeechProvider;
+  const provider = getActiveProvider();
+  if (!provider) return;
+  const opts = ttsOpts(settings);
   if (provider.enqueue) {
-    provider.enqueue(text, ttsOpts(settings));
+    provider.enqueue(text, opts);
   } else {
-    provider.speak(text, ttsOpts(settings));
+    provider.speak(text, opts);
   }
 }

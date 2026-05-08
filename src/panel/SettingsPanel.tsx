@@ -12,8 +12,6 @@ import {
   type ModelInfo,
 } from '../llm/models';
 
-const WEB_SPEECH_VOICE_HINT = 'Samantha';
-
 export function SettingsPanel() {
   const settings = useStore((s) => s.settings);
   const setSettings = useStore((s) => s.setSettings);
@@ -26,7 +24,6 @@ export function SettingsPanel() {
   const [modelError, setModelError] = useState<string | null>(null);
   const [llmFilter, setLlmFilter] = useState('');
   const [ttsFilter, setTtsFilter] = useState('');
-  const [systemVoices, setSystemVoices] = useState<string[]>([]);
 
   useEffect(() => setDraft(settings), [settings]);
 
@@ -44,17 +41,6 @@ export function SettingsPanel() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Web Speech voices (for the webspeech provider voice picker).
-  useEffect(() => {
-    if (!('speechSynthesis' in window)) return;
-    const update = () => setSystemVoices(speechSynthesis.getVoices().map((v) => v.name));
-    update();
-    speechSynthesis.onvoiceschanged = update;
-    return () => {
-      speechSynthesis.onvoiceschanged = null;
-    };
   }, []);
 
   async function refreshCatalog() {
@@ -135,89 +121,56 @@ export function SettingsPanel() {
 
       <div className="card">
         <h3>Voice</h3>
+        <ModelPicker
+          models={filteredTTS}
+          value={draft.ttsModel}
+          filter={ttsFilter}
+          setFilter={setTtsFilter}
+          onPick={(id) => {
+            // single setDraft so the model + auto-picked voice land together
+            setDraft((d) => {
+              const m = catalog?.tts.find((x) => x.id === id);
+              const needNewVoice =
+                !!m?.supported_voices?.length && !m.supported_voices.includes(d.ttsVoice);
+              return {
+                ...d,
+                ttsModel: id,
+                ttsVoice: needNewVoice ? m!.supported_voices![0] : d.ttsVoice,
+              };
+            });
+          }}
+          totalCount={catalog?.tts.length ?? 0}
+          showVoices
+        />
         <label>
-          TTS provider
-          <select
-            value={draft.ttsProvider}
-            onChange={(e) => update('ttsProvider', e.target.value as AppSettings['ttsProvider'])}
-          >
-            <option value="webspeech">Web Speech (system voices)</option>
-            <option value="openrouter">OpenRouter audio</option>
-          </select>
-        </label>
-
-        {draft.ttsProvider === 'openrouter' && (
-          <>
-            <ModelPicker
-              models={filteredTTS}
-              value={draft.ttsModel}
-              filter={ttsFilter}
-              setFilter={setTtsFilter}
-              onPick={(id) => {
-                // single setDraft so the model + auto-picked voice land together
-                setDraft((d) => {
-                  const m = catalog?.tts.find((x) => x.id === id);
-                  const needNewVoice =
-                    !!m?.supported_voices?.length && !m.supported_voices.includes(d.ttsVoice);
-                  return {
-                    ...d,
-                    ttsModel: id,
-                    ttsVoice: needNewVoice ? m!.supported_voices![0] : d.ttsVoice,
-                  };
-                });
-              }}
-              totalCount={catalog?.tts.length ?? 0}
-              showVoices
-            />
-            <label>
-              Voice
-              {selectedTTS?.supported_voices && selectedTTS.supported_voices.length > 0 ? (
-                <select
-                  value={draft.ttsVoice}
-                  onChange={(e) => update('ttsVoice', e.target.value)}
-                >
-                  {selectedTTS.supported_voices.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  value={draft.ttsVoice}
-                  onChange={(e) => update('ttsVoice', e.target.value)}
-                  placeholder="alloy"
-                />
-              )}
-            </label>
-          </>
-        )}
-
-        {draft.ttsProvider === 'webspeech' && (
-          <label>
-            Preferred voice (leave blank for auto)
+          Voice
+          {selectedTTS?.supported_voices && selectedTTS.supported_voices.length > 0 ? (
+            <select
+              value={draft.ttsVoice}
+              onChange={(e) => update('ttsVoice', e.target.value)}
+            >
+              {selectedTTS.supported_voices.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          ) : (
             <input
               type="text"
               value={draft.ttsVoice}
-              list="ubuddy-system-voices"
               onChange={(e) => update('ttsVoice', e.target.value)}
-              placeholder={WEB_SPEECH_VOICE_HINT}
+              placeholder="alloy"
             />
-            <datalist id="ubuddy-system-voices">
-              {systemVoices.map((v) => (
-                <option key={v} value={v} />
-              ))}
-            </datalist>
-          </label>
-        )}
+          )}
+        </label>
 
         <label>
           Speech rate ({draft.ttsRate.toFixed(2)}x)
           <input
             type="range"
-            min={0.6}
-            max={1.8}
+            min={0.5}
+            max={2.5}
             step={0.05}
             value={draft.ttsRate}
             onChange={(e) => update('ttsRate', parseFloat(e.target.value))}

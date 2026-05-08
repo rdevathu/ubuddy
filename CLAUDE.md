@@ -91,11 +91,21 @@ in `chrome://extensions`. No need to remove/re-add.
 
 ### TTS (`src/tts/*`)
 
+- **OpenRouter is the only TTS provider.** WebSpeech was removed because the
+  network-backed Chromium voices silently ignore `utterance.rate`, making the
+  speed slider feel broken. `loadSettings()` migrates any stale stored
+  `ttsProvider: 'webspeech'` value back to `'openrouter'`.
 - **One singleton provider per session.** `setActiveProvider()` is called from
-  `App.tsx`'s `useEffect` based on settings. `speak()` and `speakChunk()` use
-  `getActiveProvider()` — they MUST NOT create new providers per call. If they
-  do, each gets its own queue and `playing` flag, and 5 sentences play
-  simultaneously instead of sequentially. This was a real bug.
+  `App.tsx`'s `useEffect` whenever the API key changes. `speak()` and
+  `speakChunk()` use `getActiveProvider()` — they MUST NOT create new providers
+  per call. If they do, each gets its own queue and `playing` flag, and 5
+  sentences play simultaneously instead of sequentially. This was a real bug.
+- **Speed is applied client-side via `audio.playbackRate`.** OpenRouter's
+  server-side `speed` param is honored only by OpenAI TTS — Gemini, ElevenLabs,
+  etc. ignore it. We set `audio.playbackRate = rate` and `preservesPitch = true`
+  on the HTMLAudioElement so the slider behaves identically across every TTS
+  model. NEVER also send server-side `speed`: doing both compounds (slider at
+  1.5x → 2.25x perceived speed on OpenAI).
 - **Playback is a serial promise chain.** `playChain = playChain.then(...)`.
   Each step awaits its own fetch (parallel) then the previous step's audio
   ending (serial). Strictly in order, no overlap.
@@ -208,8 +218,9 @@ Don't introduce ad-hoc colors. Reuse these tokens.
   declare it locally (see `entrypoints/background.ts`) or `(globalThis as any).chrome`.
 - **Stale settings in `chrome.storage.local` survive code changes.** When a
   default value changes (e.g., the LLM model slug), users with prior saves
-  still have the old value. Either add a migration or surface a "reset to
-  defaults" affordance — currently we don't.
+  still have the old value. `loadSettings()` has a `migrate()` step for known
+  removals (currently just `ttsProvider: 'webspeech' → 'openrouter'`); add to
+  it when a field disappears or its semantics change.
 - **OpenRouter SSE error frames.** If the model errors mid-stream, OpenRouter
   sends an SSE event with `{ error: { message: ... } }`. `streamChat` checks
   for `json.error` per frame and reports — make sure new SSE consumers do too.
@@ -247,8 +258,7 @@ src/
     prompts.ts           # intensePrompt, chatSystemPrompt, sanitizeStemForIntense
   tts/
     provider.ts          # interface + active-provider singleton
-    openrouter.ts        # OpenRouter audio + SentenceStream + format fallback + WAV wrapper
-    webSpeech.ts         # free fallback using macOS system voices
+    openrouter.ts        # OpenRouter audio + SentenceStream + format fallback + WAV wrapper + client-side playbackRate
   state/
     store.ts             # Zustand
   storage/
@@ -273,8 +283,6 @@ These are real but deliberately not addressed yet:
   no "show me my recent misses" beyond the small history list in Settings.
 - **No keyboard shortcut to pick an answer.** Number keys 1-5 would be ideal
   for blazing-through workflow.
-- **Settings migration story.** When a default changes, prior users keep
-  their stale value. Add a versioned migration in `loadSettings`.
 - **TTS pre-warm.** First TTS request after panel open has higher latency
   than subsequent ones. A silent dummy request on panel open would mask it.
 - **Cross-browser.** Currently Chromium-only (uses `chrome.sidePanel`).

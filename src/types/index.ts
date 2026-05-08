@@ -66,7 +66,7 @@ export interface QuestionRecord {
 export interface AppSettings {
   openrouterApiKey: string;
   llmModel: string;
-  ttsProvider: 'webspeech' | 'openrouter';
+  ttsProvider: 'openrouter';
   ttsVoice: string;
   ttsModel: string;
   ttsRate: number;
@@ -78,7 +78,7 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   openrouterApiKey: '',
   llmModel: '',
-  ttsProvider: 'webspeech',
+  ttsProvider: 'openrouter',
   ttsVoice: '',
   ttsModel: '',
   ttsRate: 1.1,

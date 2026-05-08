@@ -4,7 +4,13 @@ const KEY = 'ubuddy.settings';
 
 export async function loadSettings(): Promise<AppSettings> {
   const stored = await browser.storage.local.get(KEY);
-  return { ...DEFAULT_SETTINGS, ...(stored[KEY] ?? {}) } as AppSettings;
+  return migrate({ ...DEFAULT_SETTINGS, ...(stored[KEY] ?? {}) } as AppSettings);
+}
+
+function migrate(s: AppSettings): AppSettings {
+  // WebSpeech was removed — coerce any stale stored value back to OpenRouter.
+  if ((s.ttsProvider as string) !== 'openrouter') s.ttsProvider = 'openrouter';
+  return s;
 }
 
 export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
@@ -17,7 +23,7 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSett
 export function watchSettings(cb: (s: AppSettings) => void): () => void {
   const listener = (changes: Record<string, Browser.storage.StorageChange>, area: string) => {
     if (area !== 'local' || !(KEY in changes)) return;
-    cb({ ...DEFAULT_SETTINGS, ...(changes[KEY].newValue ?? {}) } as AppSettings);
+    cb(migrate({ ...DEFAULT_SETTINGS, ...(changes[KEY].newValue ?? {}) } as AppSettings));
   };
   browser.storage.onChanged.addListener(listener);
   return () => browser.storage.onChanged.removeListener(listener);

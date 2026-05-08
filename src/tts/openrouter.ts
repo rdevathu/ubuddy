@@ -90,11 +90,18 @@ export function createOpenRouterTTS({ apiKey }: CreateOpts): TTSProvider {
     }
   }
 
-  function playUrl(url: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+  function playUrl(url: string, rate: number): Promise<void> {
+    return new Promise<void>((resolve) => {
       cleanupCurrent();
       currentUrl = url;
       const audio = new Audio(url);
+      // Speed adjustment is done client-side. OpenRouter's server-side `speed`
+      // parameter is only honored by OpenAI TTS; Gemini/ElevenLabs/etc. ignore
+      // it. playbackRate works on the decoded audio uniformly, so the slider
+      // behaves the same regardless of model. preservesPitch keeps the voice
+      // sounding natural at non-1x speeds (no chipmunk/giant effect).
+      audio.playbackRate = rate;
+      audio.preservesPitch = true;
       currentAudio = audio;
       audio.onended = () => {
         console.log('[ubuddy:tts] ▶ ended');
@@ -136,6 +143,7 @@ export function createOpenRouterTTS({ apiKey }: CreateOpts): TTSProvider {
       },
     );
 
+    const rate = typeof opts.rate === 'number' && isFinite(opts.rate) ? opts.rate : 1;
     playChain = playChain.then(async () => {
       if (mySession !== session) return; // stop() superseded us
       const tWait0 = performance.now();
@@ -145,10 +153,10 @@ export function createOpenRouterTTS({ apiKey }: CreateOpts): TTSProvider {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
       console.log(
-        `[ubuddy:tts] ⏱ #${seq} play start  +${Math.round(performance.now() - t0)}ms  (waited ${fetchWaited}ms for fetch)`,
+        `[ubuddy:tts] ⏱ #${seq} play start  +${Math.round(performance.now() - t0)}ms  (waited ${fetchWaited}ms for fetch, rate=${rate})`,
       );
       try {
-        await playUrl(url);
+        await playUrl(url, rate);
         console.log(`[ubuddy:tts] ⏱ #${seq} play end    +${Math.round(performance.now() - t0)}ms`);
         cb?.resolve();
       } finally {

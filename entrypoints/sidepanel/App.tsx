@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { onAny, send, sendToTab } from '../../src/messaging/bus';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { onAny, sendToTab } from '../../src/messaging/bus';
 import { streamChat } from '../../src/llm/client';
 import { intensePrompt } from '../../src/llm/prompts';
-import { AnswerList } from '../../src/panel/AnswerList';
 import { Celebration } from '../../src/panel/Celebration';
 import { ChatBox } from '../../src/panel/ChatBox';
 import { QuestionView } from '../../src/panel/QuestionView';
@@ -12,7 +11,7 @@ import { TTSControls } from '../../src/panel/TTSControls';
 import { useStore } from '../../src/state/store';
 import { streakStats, upsertQuestion } from '../../src/storage/db';
 import { loadSettings, watchSettings } from '../../src/storage/settings';
-import { createOpenRouterTTS, SentenceStream } from '../../src/tts/openrouter';
+import { createOpenRouterTTS } from '../../src/tts/openrouter';
 import { getActiveProvider, setActiveProvider, stopAll } from '../../src/tts/provider';
 
 type Tab = 'study' | 'settings';
@@ -24,10 +23,9 @@ export function App() {
   const setQuestion = useStore((s) => s.setQuestion);
   const explanation = useStore((s) => s.explanation);
   const setExplanation = useStore((s) => s.setExplanation);
-  const selectedLetter = useStore((s) => s.selectedLetter);
   const setSelectedLetter = useStore((s) => s.setSelectedLetter);
-  const verbosity = useStore((s) => s.verbosity);
   const setIsReading = useStore((s) => s.setIsReading);
+  const setIsSummarizing = useStore((s) => s.setIsSummarizing);
   const appendIntenseSummary = useStore((s) => s.appendIntenseSummary);
   const setIntenseSummary = useStore((s) => s.setIntenseSummary);
   const parserHealth = useStore((s) => s.parserHealth);
@@ -36,7 +34,7 @@ export function App() {
 
   const [tab, setTab] = useState<Tab>('study');
   const [error, setError] = useState<string | null>(null);
-  const ttsAbort = useRef<AbortController | null>(null);
+  const summaryAbort = useRef<AbortController | null>(null);
   const lastAutoReadHash = useRef<string | null>(null);
 
   useEffect(() => {
@@ -47,7 +45,6 @@ export function App() {
         ttsProvider: s.ttsProvider,
         ttsModel: s.ttsModel,
         ttsVoice: s.ttsVoice,
-        verbosity: s.defaultVerbosity,
         hasKey: !!s.openrouterApiKey,
       });
       setSettings(s);
@@ -135,46 +132,57 @@ export function App() {
     })();
   }, [setParserHealth, setQuestion, setExplanation]);
 
+  // Read aloud. If a summary has been generated, read that; otherwise read
+  // the question stem verbatim. Never generates a summary on its own.
   const readNow = useCallback(async () => {
     const q = useStore.getState().question;
-    const v = useStore.getState().verbosity;
     if (!q) {
       console.warn('[ubuddy:panel] read: no question loaded');
       return;
     }
-    console.log('[ubuddy:panel] read:', v, 'tts=', settings.ttsProvider, 'llm=', settings.llmModel);
+    const summary = useStore.getState().intenseSummary.trim();
+    const text = summary || q.stem;
+    console.log(
+      '[ubuddy:panel] read:',
+      summary ? 'summary' : 'verbatim',
+      'tts=',
+      settings.ttsProvider,
+    );
     setError(null);
     setIsReading(true);
     stopAll();
+    try {
+      await speak(text, settings);
+    } catch (e) {
+      console.error('[ubuddy:panel] speak failed:', e);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsReading(false);
+    }
+  }, [settings, setIsReading]);
 
-    if (v === 'verbatim') {
-      const text = buildVerbatimScript(q);
-      try {
-        await speak(text, settings);
-      } catch (e) {
-        console.error('[ubuddy:panel] verbatim speak failed:', e);
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setIsReading(false);
-      }
+  // Generate the tight blaze-through summary as text only (no audio).
+  const summarizeNow = useCallback(async () => {
+    const q = useStore.getState().question;
+    if (!q) {
+      console.warn('[ubuddy:panel] summarize: no question loaded');
       return;
     }
-
-    // Intense mode → stream LLM, chunk by sentence into TTS.
     if (!settings.openrouterApiKey) {
-      setError('Add your OpenRouter API key in Settings to use intense mode.');
-      setIsReading(false);
+      setError('Add your OpenRouter API key in Settings to summarize.');
       return;
     }
     if (!settings.llmModel) {
       setError('Pick a chat model in Settings (load the model list and select one).');
-      setIsReading(false);
       return;
     }
+    console.log('[ubuddy:panel] summarize: llm=', settings.llmModel);
+    setError(null);
+    summaryAbort.current?.abort();
     setIntenseSummary('');
+    setIsSummarizing(true);
     const ctrl = new AbortController();
-    ttsAbort.current = ctrl;
-    const stream = new SentenceStream((sentence) => speakChunk(sentence, settings));
+    summaryAbort.current = ctrl;
     const { system, user } = intensePrompt(q);
     streamChat(
       {
@@ -187,37 +195,21 @@ export function App() {
         signal: ctrl.signal,
       },
       {
-        onDelta: (chunk) => {
-          appendIntenseSummary(chunk);
-          stream.push(chunk);
-        },
-        onDone: () => {
-          stream.flush();
-          setIsReading(false);
-        },
+        onDelta: (chunk) => appendIntenseSummary(chunk),
+        onDone: () => setIsSummarizing(false),
         onError: (err) => {
-          console.error('[ubuddy:panel] intense stream error:', err);
-          setIsReading(false);
+          console.error('[ubuddy:panel] summarize stream error:', err);
+          setIsSummarizing(false);
           setError(`[${settings.llmModel}] ${err.message}`);
         },
       },
     );
-  }, [settings, setIsReading, appendIntenseSummary, setIntenseSummary]);
+  }, [settings, setIsSummarizing, appendIntenseSummary, setIntenseSummary]);
 
   const stopReading = useCallback(() => {
-    ttsAbort.current?.abort();
     stopAll();
     setIsReading(false);
   }, [setIsReading]);
-
-  const onPick = useCallback(
-    async (letter: string) => {
-      setSelectedLetter(letter);
-      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) await sendToTab(tab.id, { type: 'panel:forwardClick', payload: { letter } });
-    },
-    [setSelectedLetter],
-  );
 
   const showCelebration = explanation?.wasCorrect === true;
   const showReflection = explanation && !explanation.wasCorrect;
@@ -245,9 +237,8 @@ export function App() {
             </div>
           )}
           {error && <div className="banner banner--err">{error}</div>}
-          <TTSControls onRead={readNow} onStop={stopReading} />
+          <TTSControls onRead={readNow} onStop={stopReading} onSummarize={summarizeNow} />
           <QuestionView />
-          <AnswerList onPick={onPick} />
           {showCelebration && <Celebration />}
           {showReflection && <ReflectionForm />}
           {question && <ChatBox />}
@@ -270,12 +261,6 @@ function Streak() {
   );
 }
 
-function buildVerbatimScript(q: NonNullable<ReturnType<typeof useStore.getState>['question']>): string {
-  const lines = [q.stem, 'The choices are:'];
-  for (const c of q.choices) lines.push(`${c.letter}. ${c.text}.`);
-  return lines.join(' ');
-}
-
 function ttsOpts(settings: ReturnType<typeof useStore.getState>['settings']) {
   return {
     voice: settings.ttsVoice || undefined,
@@ -290,15 +275,4 @@ async function speak(text: string, settings: ReturnType<typeof useStore.getState
   const opts = ttsOpts(settings);
   console.log('[ubuddy:panel] speak via', provider.name, 'rate=', opts.rate);
   await provider.speak(text, opts);
-}
-
-function speakChunk(text: string, settings: ReturnType<typeof useStore.getState>['settings']) {
-  const provider = getActiveProvider();
-  if (!provider) return;
-  const opts = ttsOpts(settings);
-  if (provider.enqueue) {
-    provider.enqueue(text, opts);
-  } else {
-    provider.speak(text, opts);
-  }
 }

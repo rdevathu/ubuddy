@@ -1,13 +1,13 @@
 import { create } from 'zustand';
-import { DEFAULT_SETTINGS, type AppSettings, type ChatMessage, type ParsedExplanation, type ParsedQuestion, type Verbosity, type WhyWrong } from '../types';
+import { DEFAULT_SETTINGS, type AppSettings, type ChatMessage, type ParsedExplanation, type ParsedQuestion, type WhyWrong } from '../types';
 
 export interface AppState {
   settings: AppSettings;
   question: ParsedQuestion | null;
   explanation: ParsedExplanation | null;
   selectedLetter: string | null;
-  verbosity: Verbosity;
   isReading: boolean;
+  isSummarizing: boolean;
   intenseSummary: string;
   parserHealth: { ok: boolean; missing: string[] } | null;
   reflection: { whyWrong?: WhyWrong; keyLearning?: string; saved: boolean };
@@ -19,8 +19,8 @@ export interface AppState {
   setQuestion: (q: ParsedQuestion | null) => void;
   setExplanation: (e: ParsedExplanation | null) => void;
   setSelectedLetter: (l: string | null) => void;
-  setVerbosity: (v: Verbosity) => void;
   setIsReading: (b: boolean) => void;
+  setIsSummarizing: (b: boolean) => void;
   setIntenseSummary: (s: string) => void;
   appendIntenseSummary: (s: string) => void;
   setParserHealth: (h: { ok: boolean; missing: string[] } | null) => void;
@@ -37,8 +37,8 @@ export const useStore = create<AppState>((set) => ({
   question: null,
   explanation: null,
   selectedLetter: null,
-  verbosity: DEFAULT_SETTINGS.defaultVerbosity,
   isReading: false,
+  isSummarizing: false,
   intenseSummary: '',
   parserHealth: null,
   reflection: { saved: false },
@@ -46,7 +46,7 @@ export const useStore = create<AppState>((set) => ({
   chatStreaming: false,
   streak: { current: 0, total: 0, correct: 0 },
 
-  setSettings: (settings) => set({ settings, verbosity: settings.defaultVerbosity }),
+  setSettings: (settings) => set({ settings }),
   setQuestion: (question) =>
     set((state) => ({
       question,
@@ -58,8 +58,8 @@ export const useStore = create<AppState>((set) => ({
     })),
   setExplanation: (explanation) => set({ explanation }),
   setSelectedLetter: (selectedLetter) => set({ selectedLetter }),
-  setVerbosity: (verbosity) => set({ verbosity }),
   setIsReading: (isReading) => set({ isReading }),
+  setIsSummarizing: (isSummarizing) => set({ isSummarizing }),
   setIntenseSummary: (intenseSummary) => set({ intenseSummary }),
   appendIntenseSummary: (s) => set((state) => ({ intenseSummary: state.intenseSummary + s })),
   setParserHealth: (parserHealth) => set({ parserHealth }),

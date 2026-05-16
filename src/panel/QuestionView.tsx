@@ -3,8 +3,8 @@ import { abnormalLabs } from '../uworld/labs';
 
 export function QuestionView() {
   const question = useStore((s) => s.question);
-  const verbosity = useStore((s) => s.verbosity);
   const intenseSummary = useStore((s) => s.intenseSummary);
+  const isSummarizing = useStore((s) => s.isSummarizing);
 
   if (!question) {
     return (
@@ -15,17 +15,22 @@ export function QuestionView() {
   }
 
   const abnormal = abnormalLabs(question.labs);
+  // Once a summary exists it takes over the view and stays — the observer
+  // fix keeps it through answer submission so it never has to be regenerated.
+  const showSummary = isSummarizing || intenseSummary.trim().length > 0;
 
   return (
     <div className="card">
       <div className="row">
-        <h3>{verbosity === 'intense' ? 'Intense' : 'Question'}</h3>
+        <h3>{showSummary ? 'Summary' : 'Question'}</h3>
         {question.questionId && (
           <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>#{question.questionId}</span>
         )}
       </div>
-      {verbosity === 'intense' ? (
-        <div className={`stem intense`}>{intenseSummary || 'Tap Read for a tight, blazing-fast summary.'}</div>
+      {showSummary ? (
+        <div className="stem intense">
+          {intenseSummary || 'Summarizing…'}
+        </div>
       ) : (
         <div className="stem">{question.stem}</div>
       )}

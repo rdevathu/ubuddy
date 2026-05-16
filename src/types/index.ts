@@ -1,5 +1,3 @@
-export type Verbosity = 'verbatim' | 'intense';
-
 export type WhyWrong =
   | 'knowledge_gap'
   | 'misread'
@@ -70,7 +68,6 @@ export interface AppSettings {
   ttsVoice: string;
   ttsModel: string;
   ttsRate: number;
-  defaultVerbosity: Verbosity;
   autoReadOnQuestion: boolean;
   resetChatOnNewQuestion: boolean;
 }
@@ -82,7 +79,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ttsVoice: '',
   ttsModel: '',
   ttsRate: 1.1,
-  defaultVerbosity: 'verbatim',
   autoReadOnQuestion: false,
   resetChatOnNewQuestion: true,
 };

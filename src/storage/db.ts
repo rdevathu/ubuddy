@@ -23,6 +23,18 @@ export async function upsertQuestion(record: Omit<QuestionRecord, 'id'>): Promis
   return db.questions.add(record as QuestionRecord);
 }
 
+export async function getQuestionByHash(hash: string): Promise<QuestionRecord | undefined> {
+  return db.questions.where('questionHash').equals(hash).first();
+}
+
+/** Mark a question as pushed to StepBuddy. The dedup guard for re-emits. */
+export async function setStepbuddyMistakeId(hash: string, mistakeId: string): Promise<void> {
+  const existing = await db.questions.where('questionHash').equals(hash).first();
+  if (existing?.id != null) {
+    await db.questions.update(existing.id, { stepbuddyMistakeId: mistakeId });
+  }
+}
+
 export async function recentQuestions(limit = 25): Promise<QuestionRecord[]> {
   return db.questions.orderBy('timestamp').reverse().limit(limit).toArray();
 }

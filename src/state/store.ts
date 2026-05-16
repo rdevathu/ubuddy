@@ -14,6 +14,7 @@ export interface AppState {
   chat: ChatMessage[];
   chatStreaming: boolean;
   streak: { current: number; total: number; correct: number };
+  stepbuddy: { status: 'idle' | 'logging' | 'logged' | 'error'; message?: string };
 
   setSettings: (s: AppSettings) => void;
   setQuestion: (q: ParsedQuestion | null) => void;
@@ -30,6 +31,7 @@ export interface AppState {
   updateChatMessage: (id: string, content: string) => void;
   setChatStreaming: (b: boolean) => void;
   setStreak: (s: { current: number; total: number; correct: number }) => void;
+  setStepbuddy: (s: { status: 'idle' | 'logging' | 'logged' | 'error'; message?: string }) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -45,6 +47,7 @@ export const useStore = create<AppState>((set) => ({
   chat: [],
   chatStreaming: false,
   streak: { current: 0, total: 0, correct: 0 },
+  stepbuddy: { status: 'idle' },
 
   setSettings: (settings) => set({ settings }),
   setQuestion: (question) =>
@@ -54,6 +57,7 @@ export const useStore = create<AppState>((set) => ({
       selectedLetter: null,
       intenseSummary: '',
       reflection: { saved: false },
+      stepbuddy: { status: 'idle' },
       chat: state.settings.resetChatOnNewQuestion ? [] : state.chat,
     })),
   setExplanation: (explanation) => set({ explanation }),
@@ -73,4 +77,5 @@ export const useStore = create<AppState>((set) => ({
     })),
   setChatStreaming: (chatStreaming) => set({ chatStreaming }),
   setStreak: (streak) => set({ streak }),
+  setStepbuddy: (stepbuddy) => set({ stepbuddy }),
 }));

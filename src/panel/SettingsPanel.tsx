@@ -11,6 +11,7 @@ import {
   type ModelCatalog,
   type ModelInfo,
 } from '../llm/models';
+import { clearSession, getSession, signIn } from '../stepbuddy/client';
 
 export function SettingsPanel() {
   const settings = useStore((s) => s.settings);
@@ -25,7 +26,15 @@ export function SettingsPanel() {
   const [llmFilter, setLlmFilter] = useState('');
   const [ttsFilter, setTtsFilter] = useState('');
 
+  const [sbSignedInAs, setSbSignedInAs] = useState<string | null>(null);
+  const [sbBusy, setSbBusy] = useState(false);
+  const [sbError, setSbError] = useState<string | null>(null);
+
   useEffect(() => setDraft(settings), [settings]);
+
+  useEffect(() => {
+    getSession().then((s) => setSbSignedInAs(s?.email ?? null));
+  }, []);
 
   useEffect(() => {
     recentQuestions(20).then(setHistory);
@@ -64,6 +73,29 @@ export function SettingsPanel() {
 
   function update<K extends keyof AppSettings>(key: K, val: AppSettings[K]) {
     setDraft({ ...draft, [key]: val });
+  }
+
+  async function stepbuddySignIn() {
+    setSbBusy(true);
+    setSbError(null);
+    try {
+      // Persist creds first so the session can be silently re-minted later.
+      const next = await saveSettings(draft);
+      setSettings(next);
+      const session = await signIn(draft.stepbuddyEmail.trim(), draft.stepbuddyPassword);
+      setSbSignedInAs(session.email);
+    } catch (e) {
+      setSbError(e instanceof Error ? e.message : String(e));
+      setSbSignedInAs(null);
+    } finally {
+      setSbBusy(false);
+    }
+  }
+
+  async function stepbuddySignOut() {
+    await clearSession();
+    setSbSignedInAs(null);
+    setSbError(null);
   }
 
   const filteredLLM = useMemo(
@@ -196,6 +228,61 @@ export function SettingsPanel() {
           />
           <span>Clear chat on new question</span>
         </label>
+      </div>
+
+      <div className="card">
+        <h3>StepBuddy mistake log</h3>
+        <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={draft.stepbuddyEnabled}
+            onChange={(e) => update('stepbuddyEnabled', e.target.checked)}
+          />
+          <span>Auto-log every wrong answer to StepBuddy</span>
+        </label>
+        <label>
+          Email
+          <input
+            type="email"
+            autoComplete="username"
+            value={draft.stepbuddyEmail}
+            onChange={(e) => update('stepbuddyEmail', e.target.value)}
+            placeholder="you@example.com"
+          />
+        </label>
+        <label>
+          Password
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={draft.stepbuddyPassword}
+            onChange={(e) => update('stepbuddyPassword', e.target.value)}
+            placeholder="StepBuddy password"
+          />
+        </label>
+        <div className="row">
+          <button
+            className="btn btn--small"
+            onClick={stepbuddySignIn}
+            disabled={sbBusy || !draft.stepbuddyEmail || !draft.stepbuddyPassword}
+          >
+            {sbBusy ? 'Signing in…' : sbSignedInAs ? 'Re-sign in' : 'Sign in'}
+          </button>
+          {sbSignedInAs && (
+            <button className="btn btn--small" onClick={stepbuddySignOut} disabled={sbBusy}>
+              Sign out
+            </button>
+          )}
+          <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+            {sbSignedInAs ? `Signed in as ${sbSignedInAs}` : 'Not signed in'}
+          </span>
+        </div>
+        {sbError && <div className="banner banner--err">{sbError}</div>}
+        <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+          Needs a chat model selected above so UBuddy can auto-write the rule and
+          tag the system from each explanation. Without one, a miss is logged
+          when you save its reflection (your words become the rule).
+        </div>
       </div>
 
       <div className="row row--end">

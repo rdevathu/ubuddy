@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { useStore } from '../state/store';
 import { type WhyWrong, WHY_WRONG_LABELS } from '../types';
 import { upsertQuestion } from '../storage/db';
+import { logWrongAnswer } from '../stepbuddy/log';
 
 export function ReflectionForm() {
   const question = useStore((s) => s.question);
   const explanation = useStore((s) => s.explanation);
   const reflection = useStore((s) => s.reflection);
   const setReflection = useStore((s) => s.setReflection);
+  const settings = useStore((s) => s.settings);
+  const setStepbuddy = useStore((s) => s.setStepbuddy);
   const [saving, setSaving] = useState(false);
 
   if (!question || !explanation) return null;
@@ -30,6 +33,26 @@ export function ReflectionForm() {
         keyLearning: reflection.keyLearning,
       });
       setReflection({ saved: true });
+
+      // Push to StepBuddy with the student's own words. Deduped in
+      // logWrongAnswer — a no-op if the auto-logger already sent this miss.
+      if (settings.stepbuddyEnabled) {
+        setStepbuddy({ status: 'logging' });
+        const r = await logWrongAnswer({
+          settings,
+          question,
+          explanation,
+          reflection: { whyWrong: reflection.whyWrong, keyLearning: reflection.keyLearning },
+        });
+        if (r.ok) setStepbuddy({ status: 'logged', message: `${r.system} · ${r.miss}` });
+        else if ('skipped' in r && r.skipped)
+          setStepbuddy(
+            r.reason === 'already logged'
+              ? { status: 'logged', message: 'already logged' }
+              : { status: 'idle' },
+          );
+        else setStepbuddy({ status: 'error', message: r.error });
+      }
     } finally {
       setSaving(false);
     }

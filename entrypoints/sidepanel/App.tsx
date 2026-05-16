@@ -14,6 +14,7 @@ import { streakStats, upsertQuestion } from '../../src/storage/db';
 import { loadSettings, watchSettings } from '../../src/storage/settings';
 import { createOpenRouterTTS } from '../../src/tts/openrouter';
 import { getActiveProvider, setActiveProvider, stopAll } from '../../src/tts/provider';
+import { logWrongAnswer } from '../../src/stepbuddy/log';
 
 type Tab = 'study' | 'settings';
 
@@ -32,6 +33,7 @@ export function App() {
   const parserHealth = useStore((s) => s.parserHealth);
   const setParserHealth = useStore((s) => s.setParserHealth);
   const setStreak = useStore((s) => s.setStreak);
+  const stepbuddy = useStore((s) => s.stepbuddy);
 
   const [tab, setTab] = useState<Tab>('study');
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +103,30 @@ export function App() {
           }
         } catch (e) {
           console.warn('persist explanation failed', e);
+        }
+        // Auto-push wrong answers to StepBuddy. Fresh state via getState() —
+        // this handler's closure only re-binds on autoReadOnQuestion changes.
+        const st = useStore.getState();
+        if (
+          st.settings.stepbuddyEnabled &&
+          !msg.payload.wasCorrect &&
+          st.question
+        ) {
+          st.setStepbuddy({ status: 'logging' });
+          const r = await logWrongAnswer({
+            settings: st.settings,
+            question: st.question,
+            explanation: msg.payload,
+          });
+          const set = useStore.getState().setStepbuddy;
+          if (r.ok) set({ status: 'logged', message: `${r.system} · ${r.miss}` });
+          else if ('skipped' in r && r.skipped)
+            set(
+              r.reason === 'already logged'
+                ? { status: 'logged', message: 'already logged' }
+                : { status: 'idle' },
+            );
+          else set({ status: 'error', message: r.error });
         }
       }
       if (msg.type === 'shortcut:read') {
@@ -238,6 +264,17 @@ export function App() {
             </div>
           )}
           {error && <div className="banner banner--err">{error}</div>}
+          {stepbuddy.status === 'logging' && (
+            <div className="banner banner--warn">Logging miss to StepBuddy…</div>
+          )}
+          {stepbuddy.status === 'logged' && (
+            <div className="banner banner--ok">
+              Logged to StepBuddy{stepbuddy.message ? ` · ${stepbuddy.message}` : ''}
+            </div>
+          )}
+          {stepbuddy.status === 'error' && (
+            <div className="banner banner--err">StepBuddy: {stepbuddy.message}</div>
+          )}
           <TTSControls onRead={readNow} onStop={stopReading} onSummarize={summarizeNow} />
           <QuestionView />
           <ObjectiveData />

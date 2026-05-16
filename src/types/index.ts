@@ -66,6 +66,12 @@ export interface QuestionRecord {
   explanationText?: string;
   whyWrong?: WhyWrong;
   keyLearning?: string;
+  /**
+   * The uuid returned by StepBuddy's `log_mistake` RPC once this miss has been
+   * pushed. Presence = "already logged" — the dedup guard so an SPA re-emit or
+   * panel reopen never double-logs (the RPC has no upsert; every call inserts).
+   */
+  stepbuddyMistakeId?: string;
 }
 
 export interface AppSettings {
@@ -77,6 +83,16 @@ export interface AppSettings {
   ttsRate: number;
   autoReadOnQuestion: boolean;
   resetChatOnNewQuestion: boolean;
+  /**
+   * StepBuddy mistake-log integration. When enabled and signed in, every wrong
+   * answer is auto-pushed to the user's StepBuddy mistake log. Credentials are
+   * stored here (same posture as `openrouterApiKey`: chrome.storage.local,
+   * never injected into the page) so the session can be silently re-minted if
+   * the refresh token is ever rejected.
+   */
+  stepbuddyEnabled: boolean;
+  stepbuddyEmail: string;
+  stepbuddyPassword: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -88,6 +104,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ttsRate: 1.1,
   autoReadOnQuestion: false,
   resetChatOnNewQuestion: true,
+  stepbuddyEnabled: false,
+  stepbuddyEmail: '',
+  stepbuddyPassword: '',
 };
 
 export const WHY_WRONG_LABELS: Record<WhyWrong, string> = {

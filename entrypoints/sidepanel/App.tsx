@@ -5,6 +5,7 @@ import { intensePrompt } from '../../src/llm/prompts';
 import { AnswerList } from '../../src/panel/AnswerList';
 import { Celebration } from '../../src/panel/Celebration';
 import { ChatBox } from '../../src/panel/ChatBox';
+import { ObjectiveData } from '../../src/panel/ObjectiveData';
 import { QuestionView } from '../../src/panel/QuestionView';
 import { ReflectionForm } from '../../src/panel/ReflectionForm';
 import { SettingsPanel } from '../../src/panel/SettingsPanel';
@@ -247,6 +248,7 @@ export function App() {
           {error && <div className="banner banner--err">{error}</div>}
           <TTSControls onRead={readNow} onStop={stopReading} />
           <QuestionView />
+          <ObjectiveData />
           <AnswerList onPick={onPick} />
           {showCelebration && <Celebration />}
           {showReflection && <ReflectionForm />}

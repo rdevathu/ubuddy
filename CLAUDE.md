@@ -76,6 +76,32 @@ in `chrome://extensions`. No need to remove/re-add.
   "Time Spent", "Answered (in)?correctly", "Block Time Elapsed: …", etc.
 - **`stripExplanationNoise()` additionally cuts the trailing references /
   Medical Library / Copyright block.**
+- **Exhibits are bare `<a>exhibit</a>` anchors inside `#questionText`** —
+  Angular click handlers, no `href`, no class. `textContent` flattens them
+  to a plain word so the user (especially in intense mode) blows right past
+  them. `extractExhibits()` collects anchor labels from the stem container,
+  skipping anchors inside the choice list and the `NON_EXHIBIT_ANCHOR`
+  toolbar denylist (Mark Question / Lab Values / Tutorial / nav buttons —
+  these only leak in via the rare choice-anchored fallback stem path).
+  Verified against the captured `.mhtml`. Result lands in
+  `ParsedQuestion.exhibits` and the panel renders a can't-miss flag.
+
+### Labs (`src/uworld/labs.ts`)
+
+- **`REF_RANGES` is the OFFICIAL USMLE/UWorld lab sheet, transcribed exactly**
+  from the user's reference screenshots. Do NOT invent or "round" bounds.
+  Only labs on the sheet are flagged; everything else the student reads off
+  the screen ("parse only these values"). Each entry carries a `reference`
+  string shown verbatim in the Objective Data panel.
+- **Sex-varying labs use the UNION (broadest) range** for the high/low test
+  (we don't know patient sex from a bare token) and keep the per-sex split
+  in the `reference` string. False negatives > false positives here.
+- **Vitals (BP/pulse/respirations/temp/SpO2) are NOT on the sheet** but are
+  kept as objective data with standard physiologic cutoffs. Temperature is
+  still always normalized to Fahrenheit — do not regress the C→F invariant.
+- **Lipids/troponin/A1c use an open low bound (`-Infinity`)** — only the
+  high direction is pathologic. HDL is the exception (low HDL is the
+  finding), so it keeps a real low bound.
 
 ### Observer (`src/uworld/observer.ts`)
 
@@ -243,9 +269,10 @@ src/
     selectors.ts         # SINGLE source of truth — DOM selectors
     parser.ts            # parseQuestion, parseExplanation, forwardClick, selectorHealth
     observer.ts          # UWorldObserver — MutationObserver wrapper
-    labs.ts              # regex extractor + reference range table + C→F conversion
+    labs.ts              # regex extractor + OFFICIAL USMLE reference table + C→F conversion
   panel/
-    QuestionView.tsx     # stem display (verbatim or intense summary) + abnormal pills
+    QuestionView.tsx     # stem display only (verbatim or intense summary)
+    ObjectiveData.tsx    # exhibit/image flag + parsed vitals & labs w/ ref ranges
     AnswerList.tsx       # variable-count answer buttons
     TTSControls.tsx      # play/stop + verbosity dropdown
     ChatBox.tsx          # streaming LLM chat with auto-context

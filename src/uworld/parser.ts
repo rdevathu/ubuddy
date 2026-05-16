@@ -183,6 +183,55 @@ function detectUserPick(item: Element): boolean {
   return false;
 }
 
+// UWorld toolbar / nav controls are also <a> elements. When the stem falls
+// back to a broad ancestor container these can leak in, so we filter them out
+// of exhibit detection by their (case-insensitive) label.
+const NON_EXHIBIT_ANCHOR = [
+  'mark question',
+  'full screen',
+  'tutorial',
+  'lab values',
+  'open lab values',
+  'notes',
+  'open notes dialog',
+  'calculator',
+  'calc',
+  'feedback',
+  'suspend',
+  'end block',
+  'previous',
+  'next',
+  'submit',
+  'flag',
+  'reverse color',
+  'settings',
+  'help',
+];
+
+/**
+ * UWorld embeds exhibits / media / images as bare `<a>exhibit</a>` anchors in
+ * the stem (Angular click handlers, no href). `textContent` flattens them to a
+ * plain word, so the student easily misses that there's something to open.
+ * Collect the link labels so the panel can surface a can't-miss flag.
+ */
+function extractExhibits(container: Element): string[] {
+  const choiceList = queryFirst(document, SELECTORS.choiceList);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const a of Array.from(container.querySelectorAll('a'))) {
+    if (choiceList && choiceList.contains(a)) continue; // skip choice-row anchors
+    const label = clean(a.textContent);
+    if (!label || label.length > 80) continue;
+    if (NON_EXHIBIT_ANCHOR.some((t) => label.toLowerCase().includes(t))) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
 export function parseQuestion(): ParsedQuestion | null {
   const found = findStem();
   if (!found) return null;
@@ -211,6 +260,7 @@ export function parseQuestion(): ParsedQuestion | null {
   if (!hasAnyText) return null;
 
   const labs = extractLabs(stem);
+  const exhibits = extractExhibits(found.container);
   const idEl = queryFirst(document, SELECTORS.questionIdContainer);
   const idText = clean(idEl?.textContent);
   const idMatch = idText.match(/(\d{3,})/);
@@ -221,6 +271,7 @@ export function parseQuestion(): ParsedQuestion | null {
     vitals: [],
     labs,
     choices,
+    exhibits,
     questionId: idMatch?.[1],
     questionNumber: idText || undefined,
   };

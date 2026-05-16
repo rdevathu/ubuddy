@@ -1,5 +1,4 @@
 import { useStore } from '../state/store';
-import { abnormalLabs } from '../uworld/labs';
 
 export function QuestionView() {
   const question = useStore((s) => s.question);
@@ -14,8 +13,6 @@ export function QuestionView() {
     );
   }
 
-  const abnormal = abnormalLabs(question.labs);
-
   return (
     <div className="card">
       <div className="row">
@@ -28,16 +25,6 @@ export function QuestionView() {
         <div className={`stem intense`}>{intenseSummary || 'Tap Read for a tight, blazing-fast summary.'}</div>
       ) : (
         <div className="stem">{question.stem}</div>
-      )}
-      {abnormal.length > 0 && (
-        <div className="lab-pills">
-          {abnormal.map((l) => (
-            <span key={l.name + l.value} className={`pill pill--${l.status}`}>
-              {l.name} {l.value}
-              {l.unit ? ' ' + l.unit : ''} ({l.status})
-            </span>
-          ))}
-        </div>
       )}
     </div>
   );

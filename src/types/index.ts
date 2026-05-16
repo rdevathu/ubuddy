@@ -32,6 +32,13 @@ export interface ParsedQuestion {
   choices: AnswerChoice[];
   questionId?: string;
   questionNumber?: string;
+  /**
+   * Text of any exhibit / media / image links found in the stem. UWorld
+   * renders these as bare `<a>exhibit</a>` anchors (Angular click handlers,
+   * no href) — `textContent` flattens them to a plain word, so the user can
+   * easily miss that there is something to open. One entry per anchor.
+   */
+  exhibits: string[];
 }
 
 export interface ParsedExplanation {

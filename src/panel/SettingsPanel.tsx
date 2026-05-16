@@ -180,16 +180,6 @@ export function SettingsPanel() {
 
       <div className="card">
         <h3>Defaults</h3>
-        <label>
-          Default verbosity
-          <select
-            value={draft.defaultVerbosity}
-            onChange={(e) => update('defaultVerbosity', e.target.value as AppSettings['defaultVerbosity'])}
-          >
-            <option value="verbatim">Verbatim</option>
-            <option value="intense">Intense</option>
-          </select>
-        </label>
         <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <input
             type="checkbox"

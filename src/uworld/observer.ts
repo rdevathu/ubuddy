@@ -9,6 +9,7 @@ type Listener = {
 export class UWorldObserver {
   private mo: MutationObserver | null = null;
   private currentHash: string | null = null;
+  private currentQuestionId: string | null = null;
   private currentQuestion: ParsedQuestion | null = null;
   private explanationDelivered = false;
   private listeners: Listener;
@@ -51,11 +52,27 @@ export class UWorldObserver {
     const parsed = parseQuestion();
     if (!parsed) return;
 
-    if (parsed.questionHash !== this.currentHash) {
+    // Identity is keyed on UWorld's stable numeric Question Id when present.
+    // The stem hash alone is NOT enough: submitting an answer re-renders the
+    // page (badges, "Correct answer", explanation panel) and the stem's
+    // textContent shifts slightly, flipping the hash. That used to fire a
+    // bogus onQuestion → setQuestion → the generated summary got wiped. We
+    // only treat it as a new question when the Question Id actually changes;
+    // hash is the fallback for the rare case the id can't be parsed.
+    const sameQuestion =
+      (!!parsed.questionId && parsed.questionId === this.currentQuestionId) ||
+      (!parsed.questionId && parsed.questionHash === this.currentHash);
+
+    if (!sameQuestion) {
       this.currentHash = parsed.questionHash;
+      this.currentQuestionId = parsed.questionId ?? null;
       this.currentQuestion = parsed;
       this.explanationDelivered = false;
       this.listeners.onQuestion?.(parsed);
+    } else {
+      // Same question, but the post-submit DOM now carries answer markers —
+      // keep the reference fresh so explanation parsing sees them.
+      this.currentQuestion = parsed;
     }
 
     if (this.currentQuestion && !this.explanationDelivered) {

@@ -188,6 +188,52 @@ Read carefully before changing it.
 - **Markdown is forbidden in the prompt with a worked example** of the exact
   expected tone. Cheap models imitate examples even when they ignore rules.
 
+### StepBuddy mistake-log (`src/stepbuddy/*`)
+
+Auto-pushes every **wrong** answer to the user's StepBuddy via the Supabase
+`log_mistake` Postgres RPC. There is NO custom server — calls go straight to
+Supabase Auth + REST.
+
+- **No `@supabase/supabase-js` dependency.** `client.ts` is raw `fetch`. The
+  SDK's GoTrue client wants `localStorage` + a `setInterval` auto-refresh,
+  neither reliable in MV3. We persist `{accessToken, refreshToken, expiresAt}`
+  in `chrome.storage.local` under `ubuddy.stepbuddy.session` and refresh
+  **lazily, on demand** (`ensureAccessToken` checks expiry right before each
+  call) — never on a timer, because the panel/SW can be torn down anytime.
+- **The publishable key is public by design** (ships in StepBuddy's web
+  client) so it's hardcoded in `client.ts`. The user's email+password live in
+  `AppSettings` (same posture as `openrouterApiKey`) so the session can be
+  silently re-minted if the refresh token is ever rejected.
+- **The RPC has NO upsert — every call inserts a row.** Dedup is mandatory and
+  lives ONLY in `log.ts:logWrongAnswer`: guarded by the persisted
+  `QuestionRecord.stepbuddyMistakeId` (survives SPA re-emit / panel reopen)
+  PLUS an in-memory in-flight `Set` (covers the gap before the id is
+  persisted). Never call `logMistake` directly from a component.
+- **`stepbuddyMistakeId` is NOT a Dexie index** — it's a plain field, so
+  adding it needed no schema version bump. Don't add it to `.stores()`.
+- **UWorld exposes no subject taxonomy in anything we parse.** So there's
+  nothing to "map" — `classify.ts` asks the configured OpenRouter LLM to read
+  the official explanation and emit strict JSON `{system_tag, miss_type,
+  rule}`. Every field is hard-coerced against `SYSTEM_TAGS` / `MISS_TYPES`
+  (fallback `Misc` / `knowledge`) before send; the RPC validates too but a bad
+  value there costs a round-trip + thrown error.
+- **Two trigger points, one dedup.** App.tsx auto-logs on `explanation:shown`
+  when wrong+enabled (LLM writes the rule). ReflectionForm logs on reflection
+  save (the student's `keyLearning` becomes the rule, beating the LLM guess).
+  Whichever fires first wins; the other is a no-op via dedup. The RPC can't
+  update, so a reflection refined *after* an auto-log only updates the local
+  copy — by design.
+- **No-LLM fallback:** if no chat model is selected, auto-log can't write a
+  rule and bails with a message; the miss is logged only when the student
+  saves a reflection (their words = the rule, `whyWrong` → `miss_type` via
+  `mapWhyWrong`, system = `Misc`).
+- **`SYSTEM_TAGS` / `MISS_TYPES` / `SOURCES` mirror StepBuddy's
+  `lib/constants.ts`.** If StepBuddy changes those, update `client.ts` AND the
+  `classify.ts` prompt in lockstep — the RPC migration moves with them.
+- **Status is one Zustand slice** (`stepbuddy: {status, message}`), reset by
+  `setQuestion()` like the other per-question scratch state. App.tsx renders
+  it as a banner.
+
 ### Verbosity types
 
 `Verbosity = 'verbatim' | 'intense'`. Anywhere you see `'intern'` left over,
@@ -252,6 +298,13 @@ Don't introduce ad-hoc colors. Reuse these tokens.
   for `json.error` per frame and reports — make sure new SSE consumers do too.
 - **`chrome.storage.local` size limit is 5MB by default.** Models catalog can
   be ~2MB. We're fine but don't pile more in.
+- **StepBuddy email+password are stored plaintext in `ubuddy.settings`** and
+  the live session token under `ubuddy.stepbuddy.session`. Same posture as the
+  OpenRouter key (personal-use extension, never injected into the page). If you
+  ever add cloud sync of settings, exclude these keys.
+- **StepBuddy fetches go from the side panel, not a content script.** The
+  panel is a privileged extension page with the Supabase host in
+  `host_permissions`, so it's not CORS-blocked (content scripts would be).
 
 ## File tour
 
@@ -283,6 +336,10 @@ src/
     client.ts            # OpenRouter streamChat (SSE)
     models.ts            # GET /models discovery + cache
     prompts.ts           # intensePrompt, chatSystemPrompt, sanitizeStemForIntense
+  stepbuddy/
+    client.ts            # Supabase auth (raw fetch) + log_mistake RPC + enum lists
+    classify.ts          # LLM → {system_tag, miss_type, rule}; whyWrong→miss_type map
+    log.ts               # logWrongAnswer — the ONLY entry point; owns dedup
   tts/
     provider.ts          # interface + active-provider singleton
     openrouter.ts        # OpenRouter audio + SentenceStream + format fallback + WAV wrapper + client-side playbackRate

@@ -190,9 +190,10 @@ Read carefully before changing it.
 
 ### StepBuddy mistake-log (`src/stepbuddy/*`)
 
-Auto-pushes every **wrong** answer to the user's StepBuddy via the Supabase
-`log_mistake` Postgres RPC. There is NO custom server — calls go straight to
-Supabase Auth + REST.
+Pushes a **wrong** answer to the user's StepBuddy via the Supabase
+`log_mistake` Postgres RPC **only on an explicit button click** — there is NO
+auto-logger. There is NO custom server — calls go straight to Supabase Auth +
+REST.
 
 - **No `@supabase/supabase-js` dependency.** `client.ts` is raw `fetch`. The
   SDK's GoTrue client wants `localStorage` + a `setInterval` auto-refresh,
@@ -217,16 +218,20 @@ Supabase Auth + REST.
   rule}`. Every field is hard-coerced against `SYSTEM_TAGS` / `MISS_TYPES`
   (fallback `Misc` / `knowledge`) before send; the RPC validates too but a bad
   value there costs a round-trip + thrown error.
-- **Two trigger points, one dedup.** App.tsx auto-logs on `explanation:shown`
-  when wrong+enabled (LLM writes the rule). ReflectionForm logs on reflection
-  save (the student's `keyLearning` becomes the rule, beating the LLM guess).
-  Whichever fires first wins; the other is a no-op via dedup. The RPC can't
-  update, so a reflection refined *after* an auto-log only updates the local
-  copy — by design.
-- **No-LLM fallback:** if no chat model is selected, auto-log can't write a
-  rule and bails with a message; the miss is logged only when the student
-  saves a reflection (their words = the rule, `whyWrong` → `miss_type` via
-  `mapWhyWrong`, system = `Misc`).
+- **One trigger, one dedup.** The ONLY path to StepBuddy is ReflectionForm's
+  explicit "Save & log to StepBuddy" button (and its on-error retry). The
+  student's `keyLearning` is the rule; the LLM (`classify.ts`) only supplies
+  `system_tag` and a *fallback* rule when they leave the textarea blank. There
+  is deliberately no auto-log on `explanation:shown` — that race made the LLM
+  guess almost always win on a write-once RPC, burying the student's words.
+  Single explicit write = their words always land, no update RPC needed. Dedup
+  still matters: double-click, retry-after-partial-success, and SPA re-emit /
+  panel reopen are all guarded in `log.ts` (persisted id + in-flight set).
+- **No-LLM fallback:** with no chat model selected, `classify.ts` can't run, so
+  the student's `keyLearning` IS the rule (`whyWrong` → `miss_type` via
+  `mapWhyWrong`, system = `Misc`). If they also leave `keyLearning` blank,
+  `logWrongAnswer` returns an error (nothing defensible to send) and the
+  button surfaces it — local reflection is still saved either way.
 - **`SYSTEM_TAGS` / `MISS_TYPES` / `SOURCES` mirror StepBuddy's
   `lib/constants.ts`.** If StepBuddy changes those, update `client.ts` AND the
   `classify.ts` prompt in lockstep — the RPC migration moves with them.

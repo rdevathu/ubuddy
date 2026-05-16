@@ -1,11 +1,14 @@
 /**
  * The single entry point for "this answer was wrong → push it to StepBuddy".
  *
- * Called from two places (App.tsx auto-log on explanation, ReflectionForm
- * manual/fallback), so dedup MUST live here, not at the call sites:
+ * There is NO auto-logger. The ONLY caller is ReflectionForm's explicit
+ * "Save & log to StepBuddy" button (and its retry on failure), so the row
+ * always carries the student's own words — no race, no update RPC needed.
+ * Dedup still lives here, not at the call site, because:
  *
- *   - the RPC has no upsert — every call inserts a row, so a double-call
- *     means a duplicate mistake. We guard on the persisted
+ *   - the RPC has no upsert — every call inserts a row, so a double-click,
+ *     a retry after a *partial* success, or an SPA re-emit / panel reopen
+ *     would duplicate the mistake. We guard on the persisted
  *     `stepbuddyMistakeId` (survives panel reopen / SPA re-emit) AND an
  *     in-memory in-flight set (guards the gap before the id is persisted).
  *

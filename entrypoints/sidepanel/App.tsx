@@ -14,7 +14,6 @@ import { streakStats, upsertQuestion } from '../../src/storage/db';
 import { loadSettings, watchSettings } from '../../src/storage/settings';
 import { createOpenRouterTTS } from '../../src/tts/openrouter';
 import { getActiveProvider, setActiveProvider, stopAll } from '../../src/tts/provider';
-import { logWrongAnswer } from '../../src/stepbuddy/log';
 
 type Tab = 'study' | 'settings';
 
@@ -104,30 +103,10 @@ export function App() {
         } catch (e) {
           console.warn('persist explanation failed', e);
         }
-        // Auto-push wrong answers to StepBuddy. Fresh state via getState() —
-        // this handler's closure only re-binds on autoReadOnQuestion changes.
-        const st = useStore.getState();
-        if (
-          st.settings.stepbuddyEnabled &&
-          !msg.payload.wasCorrect &&
-          st.question
-        ) {
-          st.setStepbuddy({ status: 'logging' });
-          const r = await logWrongAnswer({
-            settings: st.settings,
-            question: st.question,
-            explanation: msg.payload,
-          });
-          const set = useStore.getState().setStepbuddy;
-          if (r.ok) set({ status: 'logged', message: `${r.system} · ${r.miss}` });
-          else if ('skipped' in r && r.skipped)
-            set(
-              r.reason === 'already logged'
-                ? { status: 'logged', message: 'already logged' }
-                : { status: 'idle' },
-            );
-          else set({ status: 'error', message: r.error });
-        }
+        // NOTE: nothing is pushed to StepBuddy here. There is no auto-logger.
+        // The student's own takeaway is the only thing ever sent, via the
+        // explicit button in ReflectionForm — so a single write, their words,
+        // and no need for an update RPC.
       }
       if (msg.type === 'shortcut:read') {
         readNow();

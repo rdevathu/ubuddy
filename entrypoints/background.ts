@@ -24,11 +24,6 @@ export default defineBackground(() => {
       } catch (e) {
         log('open side panel failed', e);
       }
-      return;
-    }
-
-    if (command === 'read-question') {
-      browser.runtime.sendMessage({ type: 'shortcut:read' }).catch(() => {});
     }
   });
 });

@@ -1,7 +1,8 @@
 # UBuddy — Notes for future Claude sessions
 
-A Chrome extension that reads UWorld questions aloud, gives a context-aware
-chat about them, and gameifies the answer flow. Personal-use only.
+A Chrome extension that gives a context-aware chat about UWorld questions,
+an optional tight LLM "blaze-through" summary, and gameifies the answer flow.
+Personal-use only. (Audio/voice read-aloud was removed.)
 
 ## How to run
 
@@ -29,9 +30,9 @@ in `chrome://extensions`. No need to remove/re-add.
 │                  │    │                  │    │     App.tsx      │
 │ src/uworld/      │    │ - opens panel    │    │ src/panel/*      │
 │   selectors.ts   │    │ - keyboard cmds  │    │ src/llm/*        │
-│   parser.ts      │    │ - routes msgs    │    │ src/tts/*        │
-│   observer.ts    │    │                  │    │ src/state/*      │
-│   labs.ts        │    │                  │    │ src/storage/*    │
+│   parser.ts      │    │ - routes msgs    │    │ src/state/*      │
+│   observer.ts    │    │                  │    │ src/storage/*    │
+│   labs.ts        │    │                  │    │                  │
 └──────────────────┘    └──────────────────┘    └──────────────────┘
 ```
 
@@ -43,7 +44,7 @@ in `chrome://extensions`. No need to remove/re-add.
   the side panel via `chrome.sidePanel`, wires `chrome.commands` keyboard
   shortcuts, forwards them to the panel as runtime messages.
 - **Side panel** (`entrypoints/sidepanel/App.tsx` + `src/panel/*`) is where all
-  the work happens — UI, TTS playback, LLM streaming, settings, history.
+  the work happens — UI, LLM streaming, settings, history.
 - **Messaging** (`src/messaging/*`) is a small typed wrapper over
   `browser.runtime.sendMessage` / `onMessage`. Use the typed `RuntimeMessage`
   union; never send untyped messages.
@@ -115,41 +116,14 @@ in `chrome://extensions`. No need to remove/re-add.
 - Dedup is by `hashStem(stem)` — a content hash, not a URL or counter. This
   survives UWorld's SPA navigation between questions.
 
-### TTS (`src/tts/*`)
+### Audio/voice — REMOVED
 
-- **OpenRouter is the only TTS provider.** WebSpeech was removed because the
-  network-backed Chromium voices silently ignore `utterance.rate`, making the
-  speed slider feel broken. `loadSettings()` migrates any stale stored
-  `ttsProvider: 'webspeech'` value back to `'openrouter'`.
-- **One singleton provider per session.** `setActiveProvider()` is called from
-  `App.tsx`'s `useEffect` whenever the API key changes. `speak()` and
-  `speakChunk()` use `getActiveProvider()` — they MUST NOT create new providers
-  per call. If they do, each gets its own queue and `playing` flag, and 5
-  sentences play simultaneously instead of sequentially. This was a real bug.
-- **Speed is applied client-side via `audio.playbackRate`.** OpenRouter's
-  server-side `speed` param is honored only by OpenAI TTS — Gemini, ElevenLabs,
-  etc. ignore it. We set `audio.playbackRate = rate` and `preservesPitch = true`
-  on the HTMLAudioElement so the slider behaves identically across every TTS
-  model. NEVER also send server-side `speed`: doing both compounds (slider at
-  1.5x → 2.25x perceived speed on OpenAI).
-- **Playback is a serial promise chain.** `playChain = playChain.then(...)`.
-  Each step awaits its own fetch (parallel) then the previous step's audio
-  ending (serial). Strictly in order, no overlap.
-- **`SentenceStream` does clause-grade chunking.** First emittable chunk is
-  ~30-60 chars even if the full sentence is 200+ chars. This is how we get
-  fast "time to first audio" — without it, the whole first sentence has to
-  finish generating + fetch before any audio plays.
-- **`stripMarkdownLive` runs at buffer level.** Cheap LLM models love adding
-  `## Clinical Summary` / `**bold**` / bullets. We strip them in the buffer
-  before sentence extraction.
-- **PCM models (Gemini) need a WAV wrapper.** `pcmToWavBlob()` prepends a
-  44-byte WAV header to the raw bytes (24kHz mono 16-bit LE) so it plays
-  through `<audio>` like an mp3. `pickResponseFormat()` chooses mp3 vs pcm by
-  model name. `fetchWithFallback()` retries with the opposite format if the
-  provider 400s with `response_format` in the error body.
-- **Session counter on `stop()`.** Late-arriving fetches from a previously
-  stopped read check `mySession !== session` and bail. Without this, hitting
-  Stop and then Read again could replay stale audio from the prior read.
+There is no TTS / read-aloud / audio path anymore. `src/tts/*`, the speed
+slider, voice picker, `autoReadOnQuestion`, the `read-question` keyboard
+command, and the `tts:*` / `shortcut:read` messages were all deleted. Do not
+re-introduce a "read it aloud" feature without an explicit request — it was
+removed as unvetted code. `loadSettings()`'s `migrate()` strips any stale
+`tts*` / `autoReadOnQuestion` keys still sitting in `chrome.storage.local`.
 
 ### LLM (`src/llm/*`)
 
@@ -157,15 +131,15 @@ in `chrome://extensions`. No need to remove/re-add.
   uses fetch + SSE parsing. Headers `HTTP-Referer` and `X-Title` are
   required by OpenRouter for ranking.
 - **API keys live in `chrome.storage.local`.** Never inject them into the
-  page. All LLM/TTS calls originate from the side panel (privileged context).
+  page. All LLM calls originate from the side panel (privileged context).
 - **Models are discovered, not hardcoded.** `src/llm/models.ts:fetchModels()`
-  hits `GET /models?output_modalities=all` and partitions into LLM (text out)
-  and TTS (audio out / `supported_voices`). Cached 24h in
+  hits `GET /models?output_modalities=all` and keeps only text-output (chat)
+  models — `ModelCatalog` is `{ llm, fetchedAt }`, no TTS bucket. Cached 24h in
   `chrome.storage.local` under key `ubuddy.models`.
-- **DEFAULT_SETTINGS.llmModel and ttsModel are EMPTY strings.** The UI forces
-  the user to pick from the live catalog. This is intentional — hardcoded
-  slugs go stale (`groq/llama-3.3-70b-versatile` → wrong, real OpenRouter
-  slug is `meta-llama/llama-3.3-70b-instruct`).
+- **DEFAULT_SETTINGS.llmModel is an EMPTY string.** The UI forces the user to
+  pick from the live catalog. This is intentional — hardcoded slugs go stale
+  (`groq/llama-3.3-70b-versatile` → wrong, real OpenRouter slug is
+  `meta-llama/llama-3.3-70b-instruct`).
 
 ### Intense mode (`src/llm/prompts.ts:intensePrompt`)
 
@@ -239,10 +213,12 @@ REST.
   `setQuestion()` like the other per-question scratch state. App.tsx renders
   it as a banner.
 
-### Verbosity types
+### Question display
 
-`Verbosity = 'verbatim' | 'intense'`. Anywhere you see `'intern'` left over,
-it's a stale reference and should be `'intense'`.
+There is no `Verbosity` type and no read-aloud. `QuestionView` shows the raw
+stem by default; pressing **Summarize** (`SummaryControls`) streams the tight
+LLM "intense" summary into `intenseSummary`, and the view switches to that.
+The summary is text only and survives answer submission.
 
 ## State
 
@@ -260,18 +236,7 @@ it's a stale reference and should be `'intense'`.
 ## Logging conventions
 
 Every log line is prefixed with the subsystem: `[ubuddy:content]`,
-`[ubuddy:bg]`, `[ubuddy:panel]`, `[ubuddy:llm]`, `[ubuddy:tts]`,
-`[ubuddy:models]`. The TTS module additionally logs a per-chunk timing trace:
-
-```
-[ubuddy:tts] ⏱ #0 fetch start  +0ms  "<text>"
-[ubuddy:tts] ⏱ #0 fetch end    +420ms
-[ubuddy:tts] ⏱ #0 play start   +422ms  (waited 240ms for fetch)
-[ubuddy:tts] ⏱ #0 play end     +3200ms
-```
-
-This is intentionally verbose — when something goes sideways the user
-copy-pastes these and we can pinpoint exactly which stage is slow.
+`[ubuddy:bg]`, `[ubuddy:panel]`, `[ubuddy:llm]`, `[ubuddy:models]`.
 
 ## Theme
 
@@ -296,8 +261,8 @@ Don't introduce ad-hoc colors. Reuse these tokens.
 - **Stale settings in `chrome.storage.local` survive code changes.** When a
   default value changes (e.g., the LLM model slug), users with prior saves
   still have the old value. `loadSettings()` has a `migrate()` step for known
-  removals (currently just `ttsProvider: 'webspeech' → 'openrouter'`); add to
-  it when a field disappears or its semantics change.
+  removals (currently strips the dropped `tts*` / `autoReadOnQuestion` keys);
+  add to it when a field disappears or its semantics change.
 - **OpenRouter SSE error frames.** If the model errors mid-stream, OpenRouter
   sends an SSE event with `{ error: { message: ... } }`. `streamChat` checks
   for `json.error` per frame and reports — make sure new SSE consumers do too.
@@ -320,7 +285,7 @@ entrypoints/
   sidepanel/
     index.html
     main.tsx             # React mount
-    App.tsx              # ROOT — message routing, read flow, intense streaming
+    App.tsx              # ROOT — message routing, intense summary streaming
 
 src/
   uworld/
@@ -329,14 +294,14 @@ src/
     observer.ts          # UWorldObserver — MutationObserver wrapper
     labs.ts              # regex extractor + OFFICIAL USMLE reference table + C→F conversion
   panel/
-    QuestionView.tsx     # stem display only (verbatim or intense summary)
+    QuestionView.tsx     # stem display only (raw stem or intense summary)
     ObjectiveData.tsx    # exhibit/image flag + parsed vitals & labs w/ ref ranges
     AnswerList.tsx       # variable-count answer buttons
-    TTSControls.tsx      # play/stop + verbosity dropdown
+    SummaryControls.tsx  # single "Summarize" button (text only, no audio)
     ChatBox.tsx          # streaming LLM chat with auto-context
     ReflectionForm.tsx   # wrong-answer reflection (dropdown + textarea)
     Celebration.tsx      # canvas-confetti + streak display
-    SettingsPanel.tsx    # API key, model picker, voice, etc.
+    SettingsPanel.tsx    # API key, chat-model picker, StepBuddy, history
   llm/
     client.ts            # OpenRouter streamChat (SSE)
     models.ts            # GET /models discovery + cache
@@ -345,9 +310,6 @@ src/
     client.ts            # Supabase auth (raw fetch) + log_mistake RPC + enum lists
     classify.ts          # LLM → {system_tag, miss_type, rule}; whyWrong→miss_type map
     log.ts               # logWrongAnswer — the ONLY entry point; owns dedup
-  tts/
-    provider.ts          # interface + active-provider singleton
-    openrouter.ts        # OpenRouter audio + SentenceStream + format fallback + WAV wrapper + client-side playbackRate
   state/
     store.ts             # Zustand
   storage/
@@ -372,8 +334,6 @@ These are real but deliberately not addressed yet:
   no "show me my recent misses" beyond the small history list in Settings.
 - **No keyboard shortcut to pick an answer.** Number keys 1-5 would be ideal
   for blazing-through workflow.
-- **TTS pre-warm.** First TTS request after panel open has higher latency
-  than subsequent ones. A silent dummy request on panel open would mask it.
 - **Cross-browser.** Currently Chromium-only (uses `chrome.sidePanel`).
   Firefox port would need `sidebarAction` + the WebExtensions polyfill.
 

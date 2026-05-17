@@ -7,10 +7,7 @@ export type RuntimeMessage =
   | { type: 'panel:requestParse' }
   | { type: 'panel:forwardClick'; payload: { letter: string } }
   | { type: 'panel:openSidePanel' }
-  | { type: 'llm:complete'; payload: { messages: { role: string; content: string }[]; model?: string } }
-  | { type: 'tts:speak'; payload: { text: string; model?: string; voice?: string } }
-  | { type: 'tts:stop' }
-  | { type: 'shortcut:read' };
+  | { type: 'llm:complete'; payload: { messages: { role: string; content: string }[]; model?: string } };
 
 export type RuntimeMessageType = RuntimeMessage['type'];
 

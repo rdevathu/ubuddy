@@ -8,8 +8,12 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 function migrate(s: AppSettings): AppSettings {
-  // WebSpeech was removed — coerce any stale stored value back to OpenRouter.
-  if ((s.ttsProvider as string) !== 'openrouter') s.ttsProvider = 'openrouter';
+  // Audio/voice (TTS) support was removed. Drop any stale stored TTS keys so
+  // they don't linger in chrome.storage.local indefinitely.
+  const bag = s as unknown as Record<string, unknown>;
+  for (const k of ['ttsProvider', 'ttsVoice', 'ttsModel', 'ttsRate', 'autoReadOnQuestion']) {
+    delete bag[k];
+  }
   return s;
 }
 

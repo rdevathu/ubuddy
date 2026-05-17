@@ -3,7 +3,7 @@ import type { LabValue } from '../types';
 interface RefRange {
   /** Canonical lab name, lowercase. */
   name: string;
-  /** Display name for UI/TTS. */
+  /** Display name for the UI. */
   display: string;
   /** Match patterns (lowercased, anchored externally). */
   aliases: string[];
@@ -226,10 +226,11 @@ export function abnormalLabs(labs: LabValue[]): LabValue[] {
 }
 
 /**
- * TTS-friendly rendering: no units (mm Hg, °C/°F, /min, mg/dL, etc.) because
- * they trip up TTS voices and slow the user down. BP "80/50" → "80 over 50".
+ * Compact, unit-free rendering for the LLM intense summary: no units (mm Hg,
+ * °C/°F, /min, mg/dL, etc.) — they bloat the summary and slow the reader down.
+ * BP "80/50" → "80 over 50".
  */
-export function ttsLabValue(l: LabValue): string {
+export function labValueNoUnits(l: LabValue): string {
   const v = l.value.includes('/') ? l.value.replace('/', ' over ') : l.value;
   return `${l.name} ${v}, ${l.status}`;
 }
@@ -237,5 +238,5 @@ export function ttsLabValue(l: LabValue): string {
 export function summarizeLabsForLLM(labs: LabValue[]): string {
   const abnormal = abnormalLabs(labs);
   if (abnormal.length === 0) return 'no abnormal vitals or labs';
-  return abnormal.map(ttsLabValue).join('; ');
+  return abnormal.map(labValueNoUnits).join('; ');
 }

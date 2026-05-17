@@ -8,12 +8,10 @@ import { ObjectiveData } from '../../src/panel/ObjectiveData';
 import { QuestionView } from '../../src/panel/QuestionView';
 import { ReflectionForm } from '../../src/panel/ReflectionForm';
 import { SettingsPanel } from '../../src/panel/SettingsPanel';
-import { TTSControls } from '../../src/panel/TTSControls';
+import { SummaryControls } from '../../src/panel/SummaryControls';
 import { useStore } from '../../src/state/store';
 import { streakStats, upsertQuestion } from '../../src/storage/db';
 import { loadSettings, watchSettings } from '../../src/storage/settings';
-import { createOpenRouterTTS } from '../../src/tts/openrouter';
-import { getActiveProvider, setActiveProvider, stopAll } from '../../src/tts/provider';
 
 type Tab = 'study' | 'settings';
 
@@ -25,7 +23,6 @@ export function App() {
   const explanation = useStore((s) => s.explanation);
   const setExplanation = useStore((s) => s.setExplanation);
   const setSelectedLetter = useStore((s) => s.setSelectedLetter);
-  const setIsReading = useStore((s) => s.setIsReading);
   const setIsSummarizing = useStore((s) => s.setIsSummarizing);
   const appendIntenseSummary = useStore((s) => s.appendIntenseSummary);
   const setIntenseSummary = useStore((s) => s.setIntenseSummary);
@@ -37,16 +34,12 @@ export function App() {
   const [tab, setTab] = useState<Tab>('study');
   const [error, setError] = useState<string | null>(null);
   const summaryAbort = useRef<AbortController | null>(null);
-  const lastAutoReadHash = useRef<string | null>(null);
 
   useEffect(() => {
     console.log('[ubuddy:panel] mount');
     loadSettings().then((s) => {
       console.log('[ubuddy:panel] settings loaded:', {
         llmModel: s.llmModel,
-        ttsProvider: s.ttsProvider,
-        ttsModel: s.ttsModel,
-        ttsVoice: s.ttsVoice,
         hasKey: !!s.openrouterApiKey,
       });
       setSettings(s);
@@ -58,13 +51,6 @@ export function App() {
     });
   }, [setSettings, setStreak]);
 
-  // Set up TTS provider — OpenRouter is the only supported provider.
-  useEffect(() => {
-    if (!settings.openrouterApiKey) return;
-    console.log('[ubuddy:panel] TTS provider: openrouter');
-    setActiveProvider(createOpenRouterTTS({ apiKey: settings.openrouterApiKey }));
-  }, [settings.openrouterApiKey]);
-
   // Listen to runtime messages from content script + background.
   useEffect(() => {
     const off = onAny(async (msg) => {
@@ -72,13 +58,6 @@ export function App() {
       if (msg.type === 'question:loaded') {
         setQuestion(msg.payload);
         setError(null);
-        if (
-          settings.autoReadOnQuestion &&
-          lastAutoReadHash.current !== msg.payload.questionHash
-        ) {
-          lastAutoReadHash.current = msg.payload.questionHash;
-          setTimeout(() => readNow(), 100);
-        }
       }
       if (msg.type === 'explanation:shown') {
         setExplanation(msg.payload);
@@ -108,13 +87,9 @@ export function App() {
         // explicit button in ReflectionForm — so a single write, their words,
         // and no need for an update RPC.
       }
-      if (msg.type === 'shortcut:read') {
-        readNow();
-      }
     });
     return off;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.autoReadOnQuestion]);
+  }, [setQuestion, setExplanation, setSelectedLetter, setStreak]);
 
   // Pull parse state when the panel opens (handles the "panel opened after
   // question already on screen" case). Does NOT broadcast — the content script
@@ -138,36 +113,7 @@ export function App() {
     })();
   }, [setParserHealth, setQuestion, setExplanation]);
 
-  // Read aloud. If a summary has been generated, read that; otherwise read
-  // the question stem verbatim. Never generates a summary on its own.
-  const readNow = useCallback(async () => {
-    const q = useStore.getState().question;
-    if (!q) {
-      console.warn('[ubuddy:panel] read: no question loaded');
-      return;
-    }
-    const summary = useStore.getState().intenseSummary.trim();
-    const text = summary || q.stem;
-    console.log(
-      '[ubuddy:panel] read:',
-      summary ? 'summary' : 'verbatim',
-      'tts=',
-      settings.ttsProvider,
-    );
-    setError(null);
-    setIsReading(true);
-    stopAll();
-    try {
-      await speak(text, settings);
-    } catch (e) {
-      console.error('[ubuddy:panel] speak failed:', e);
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setIsReading(false);
-    }
-  }, [settings, setIsReading]);
-
-  // Generate the tight blaze-through summary as text only (no audio).
+  // Generate the tight blaze-through summary as text only (shown on screen).
   const summarizeNow = useCallback(async () => {
     const q = useStore.getState().question;
     if (!q) {
@@ -212,11 +158,6 @@ export function App() {
     );
   }, [settings, setIsSummarizing, appendIntenseSummary, setIntenseSummary]);
 
-  const stopReading = useCallback(() => {
-    stopAll();
-    setIsReading(false);
-  }, [setIsReading]);
-
   const showCelebration = explanation?.wasCorrect === true;
   const showReflection = explanation && !explanation.wasCorrect;
 
@@ -254,7 +195,7 @@ export function App() {
           {stepbuddy.status === 'error' && (
             <div className="banner banner--err">StepBuddy: {stepbuddy.message}</div>
           )}
-          <TTSControls onRead={readNow} onStop={stopReading} onSummarize={summarizeNow} />
+          <SummaryControls onSummarize={summarizeNow} />
           <QuestionView />
           <ObjectiveData />
           {showCelebration && <Celebration />}
@@ -277,20 +218,4 @@ function Streak() {
       🔥 {streak.current} · {pct}% ({streak.correct}/{streak.total})
     </div>
   );
-}
-
-function ttsOpts(settings: ReturnType<typeof useStore.getState>['settings']) {
-  return {
-    voice: settings.ttsVoice || undefined,
-    rate: settings.ttsRate,
-    model: settings.ttsModel,
-  };
-}
-
-async function speak(text: string, settings: ReturnType<typeof useStore.getState>['settings']) {
-  const provider = getActiveProvider();
-  if (!provider) throw new Error('Add your OpenRouter API key in Settings to enable TTS.');
-  const opts = ttsOpts(settings);
-  console.log('[ubuddy:panel] speak via', provider.name, 'rate=', opts.rate);
-  await provider.speak(text, opts);
 }

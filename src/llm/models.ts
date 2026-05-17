@@ -1,7 +1,8 @@
 /**
- * OpenRouter /models discovery + cache.
+ * OpenRouter /models discovery + cache. Text-output (chat) models only —
+ * audio/TTS support was removed.
  * Schema mirrors the OpenAPI spec: each model has id, name, description,
- * architecture.output_modalities, supported_voices, pricing.
+ * architecture.output_modalities, pricing.
  */
 
 export interface ModelInfo {
@@ -19,13 +20,11 @@ export interface ModelInfo {
     output_modalities?: string[];
     modality?: string;
   };
-  supported_voices?: string[] | null;
   supported_parameters?: string[];
 }
 
 export interface ModelCatalog {
   llm: ModelInfo[];
-  tts: ModelInfo[];
   fetchedAt: number;
 }
 
@@ -54,21 +53,15 @@ export async function fetchModels(apiKey?: string): Promise<ModelCatalog> {
   console.log('[ubuddy:models] ✓ received', data.length, 'models');
 
   const llm: ModelInfo[] = [];
-  const tts: ModelInfo[] = [];
   for (const m of data) {
     const out = m.architecture?.output_modalities ?? [];
-    const isTTS =
-      Array.isArray(m.supported_voices) ||
-      out.some((x) => x === 'audio' || x === 'speech');
-    const isText = out.includes('text');
-    if (isTTS) tts.push(m);
-    if (isText && !isTTS) llm.push(m);
+    const isAudioOnly = out.length > 0 && !out.includes('text');
+    if (out.includes('text') || (!isAudioOnly && out.length === 0)) llm.push(m);
   }
   llm.sort((a, b) => a.id.localeCompare(b.id));
-  tts.sort((a, b) => a.id.localeCompare(b.id));
-  console.log('[ubuddy:models] partitioned: llm=', llm.length, 'tts=', tts.length);
+  console.log('[ubuddy:models] text models:', llm.length);
 
-  const catalog: ModelCatalog = { llm, tts, fetchedAt: Date.now() };
+  const catalog: ModelCatalog = { llm, fetchedAt: Date.now() };
   await browser.storage.local.set({ [CACHE_KEY]: catalog });
   return catalog;
 }

@@ -6,7 +6,6 @@ export interface AppState {
   question: ParsedQuestion | null;
   explanation: ParsedExplanation | null;
   selectedLetter: string | null;
-  isReading: boolean;
   isSummarizing: boolean;
   intenseSummary: string;
   parserHealth: { ok: boolean; missing: string[] } | null;
@@ -20,7 +19,6 @@ export interface AppState {
   setQuestion: (q: ParsedQuestion | null) => void;
   setExplanation: (e: ParsedExplanation | null) => void;
   setSelectedLetter: (l: string | null) => void;
-  setIsReading: (b: boolean) => void;
   setIsSummarizing: (b: boolean) => void;
   setIntenseSummary: (s: string) => void;
   appendIntenseSummary: (s: string) => void;
@@ -39,7 +37,6 @@ export const useStore = create<AppState>((set) => ({
   question: null,
   explanation: null,
   selectedLetter: null,
-  isReading: false,
   isSummarizing: false,
   intenseSummary: '',
   parserHealth: null,
@@ -62,7 +59,6 @@ export const useStore = create<AppState>((set) => ({
     })),
   setExplanation: (explanation) => set({ explanation }),
   setSelectedLetter: (selectedLetter) => set({ selectedLetter }),
-  setIsReading: (isReading) => set({ isReading }),
   setIsSummarizing: (isSummarizing) => set({ isSummarizing }),
   setIntenseSummary: (intenseSummary) => set({ intenseSummary }),
   appendIntenseSummary: (s) => set((state) => ({ intenseSummary: state.intenseSummary + s })),

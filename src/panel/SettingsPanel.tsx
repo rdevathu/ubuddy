@@ -24,7 +24,6 @@ export function SettingsPanel() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [llmFilter, setLlmFilter] = useState('');
-  const [ttsFilter, setTtsFilter] = useState('');
 
   const [sbSignedInAs, setSbSignedInAs] = useState<string | null>(null);
   const [sbBusy, setSbBusy] = useState(false);
@@ -102,15 +101,6 @@ export function SettingsPanel() {
     () => filterModels(catalog?.llm ?? [], llmFilter),
     [catalog, llmFilter],
   );
-  const filteredTTS = useMemo(
-    () => filterModels(catalog?.tts ?? [], ttsFilter),
-    [catalog, ttsFilter],
-  );
-
-  const selectedTTS = useMemo(
-    () => catalog?.tts.find((m) => m.id === draft.ttsModel),
-    [catalog, draft.ttsModel],
-  );
 
   return (
     <div className="body">
@@ -131,7 +121,7 @@ export function SettingsPanel() {
           </button>
           {catalog && (
             <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
-              {catalog.llm.length} LLM · {catalog.tts.length} TTS · cached {timeAgo(catalog.fetchedAt)}
+              {catalog.llm.length} models · cached {timeAgo(catalog.fetchedAt)}
             </span>
           )}
         </div>
@@ -152,74 +142,7 @@ export function SettingsPanel() {
       </div>
 
       <div className="card">
-        <h3>Voice</h3>
-        <ModelPicker
-          models={filteredTTS}
-          value={draft.ttsModel}
-          filter={ttsFilter}
-          setFilter={setTtsFilter}
-          onPick={(id) => {
-            // single setDraft so the model + auto-picked voice land together
-            setDraft((d) => {
-              const m = catalog?.tts.find((x) => x.id === id);
-              const needNewVoice =
-                !!m?.supported_voices?.length && !m.supported_voices.includes(d.ttsVoice);
-              return {
-                ...d,
-                ttsModel: id,
-                ttsVoice: needNewVoice ? m!.supported_voices![0] : d.ttsVoice,
-              };
-            });
-          }}
-          totalCount={catalog?.tts.length ?? 0}
-          showVoices
-        />
-        <label>
-          Voice
-          {selectedTTS?.supported_voices && selectedTTS.supported_voices.length > 0 ? (
-            <select
-              value={draft.ttsVoice}
-              onChange={(e) => update('ttsVoice', e.target.value)}
-            >
-              {selectedTTS.supported_voices.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              value={draft.ttsVoice}
-              onChange={(e) => update('ttsVoice', e.target.value)}
-              placeholder="alloy"
-            />
-          )}
-        </label>
-
-        <label>
-          Speech rate ({draft.ttsRate.toFixed(2)}x)
-          <input
-            type="range"
-            min={0.5}
-            max={2.5}
-            step={0.05}
-            value={draft.ttsRate}
-            onChange={(e) => update('ttsRate', parseFloat(e.target.value))}
-          />
-        </label>
-      </div>
-
-      <div className="card">
         <h3>Defaults</h3>
-        <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={draft.autoReadOnQuestion}
-            onChange={(e) => update('autoReadOnQuestion', e.target.checked)}
-          />
-          <span>Auto-read on new question</span>
-        </label>
         <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <input
             type="checkbox"
@@ -320,10 +243,9 @@ interface ModelPickerProps {
   setFilter: (s: string) => void;
   onPick: (id: string) => void;
   totalCount: number;
-  showVoices?: boolean;
 }
 
-function ModelPicker({ models, value, filter, setFilter, onPick, totalCount, showVoices }: ModelPickerProps) {
+function ModelPicker({ models, value, filter, setFilter, onPick, totalCount }: ModelPickerProps) {
   if (totalCount === 0) {
     return (
       <div className="empty">
@@ -368,9 +290,6 @@ function ModelPicker({ models, value, filter, setFilter, onPick, totalCount, sho
                 </div>
                 <div style={{ color: 'var(--fg-dim)', fontSize: 11 }}>
                   {priceLabel(m) || '—'}
-                  {showVoices && m.supported_voices?.length
-                    ? ` · ${m.supported_voices.length} voices`
-                    : ''}
                 </div>
               </button>
             );

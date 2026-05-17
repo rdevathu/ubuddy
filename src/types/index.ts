@@ -77,11 +77,6 @@ export interface QuestionRecord {
 export interface AppSettings {
   openrouterApiKey: string;
   llmModel: string;
-  ttsProvider: 'openrouter';
-  ttsVoice: string;
-  ttsModel: string;
-  ttsRate: number;
-  autoReadOnQuestion: boolean;
   resetChatOnNewQuestion: boolean;
   /**
    * StepBuddy mistake-log integration. When enabled and signed in, every wrong
@@ -98,11 +93,6 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   openrouterApiKey: '',
   llmModel: '',
-  ttsProvider: 'openrouter',
-  ttsVoice: '',
-  ttsModel: '',
-  ttsRate: 1.1,
-  autoReadOnQuestion: false,
   resetChatOnNewQuestion: true,
   stepbuddyEnabled: false,
   stepbuddyEmail: '',

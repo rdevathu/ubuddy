@@ -1,24 +1,95 @@
-# UBuddy — Notes for future Claude sessions
+# CLAUDE.md — UBuddy operating notes
 
-A Chrome extension that reads UWorld questions aloud, gives a context-aware
-chat about them, and gameifies the answer flow. Personal-use only.
+For Claude Code sessions in this repo. **Pick this up cold; everything you
+need is here.** Read top-to-bottom before non-trivial work.
 
-## How to run
+UBuddy is a Chromium MV3 extension (WXT + React) that reads UWorld questions
+aloud, runs a context-aware chat about them, gameifies the answer flow, and
+one-click-logs wrong answers to StepBuddy. **Personal-use only — one user, one
+machine, local-only repo: no git remote, no CI, no Chrome Web Store listing.**
+
+---
+
+## Who / what
+
+- **User: Rahul** — third-year Stanford med student, USMLE Step 2 CK exam
+  **Mon Jun 22, 2026**. He drives you from the **Claude Code agents window**.
+  He does **not** run commands or edit code himself. His *one* manual step in
+  the entire loop is clicking the refresh icon on the UBuddy card in
+  `chrome://extensions`. Design every task so that is genuinely all he has to
+  do — anything more is a regression in the workflow.
+- **Companion app:** wrong answers log to **StepBuddy v2**
+  (`/Users/radev/Developer/stepbuddy-v2`, https://stepbuddy.devathulab.com) via
+  the Supabase `log_mistake` RPC. Relevant only for the `src/stepbuddy/*`
+  contract below; never edit that repo from here.
+
+---
+
+## Working agreement — read this first
+
+1. **Start every task in a git worktree.** Call `EnterWorktree` before any
+   edit. Rahul runs parallel agents; the shared checkout is his — never edit
+   it directly.
+2. **Finish, then land on `main`. Do not ask "shall I commit / merge?"** Rahul
+   only ever tests from `main`, because the loaded extension builds from the
+   primary checkout. So the pre-authorized, expected end state of *every* task
+   is: work merged to `main` **and** `dist/chrome-mv3` rebuilt there. There is
+   no remote and no deploy — "ship" means exactly those two things.
+3. **Before landing, both gates must be green:** `bun run compile` (tsc
+   typecheck, no JS) **and** `bun run build` (the real WXT prod build that
+   produces `dist/chrome-mv3`). `bun run dev` is more forgiving than the prod
+   build — trust `build`. Smoke UI changes on `bun run dev` if useful.
+4. **End every task by telling Rahul exactly one thing:** *"Reload the UBuddy
+   card at `chrome://extensions`."* Never make him remove/re-add the extension
+   or re-pick a folder.
+5. **Only stop to ask if something actually went wrong** — `build` fails and
+   the fix is non-obvious; UWorld's DOM changed and you need a real sample
+   (see "Asking the user vs. assuming"); a requirement is genuinely ambiguous;
+   a step is destructive with no safe default. Otherwise: act, finish, ship.
+6. **One tight question max** when truly blocked. Never surface incidentals
+   (worktree branch names, build hashes, file counts, tsc timings).
+7. **Default to action over consultation.** Rahul is studying while you work.
+
+### Land-on-main sequence (worktree → `main` → fresh `dist/`)
+
+From the worktree, once `bun run compile` and `bun run build` are both green:
+
+```sh
+git add -A
+git -c commit.gpgsign=false commit -m "imperative subject
+
+Optional short body explaining the why if non-obvious."
+# (append the Co-Authored-By trailer per global instructions)
+
+# Local repo, no remote: land on main in the PRIMARY checkout, then rebuild
+# there so the loaded extension picks the change up.
+git -C /Users/radev/Developer/UBuddy checkout main
+git -C /Users/radev/Developer/UBuddy merge --no-ff worktree-<name>
+( cd /Users/radev/Developer/UBuddy && bun run build )
+```
+
+- `-c commit.gpgsign=false` — signing can hang the non-interactive shell.
+- Then `ExitWorktree` (remove); the work is already on `main`.
+- **If the primary checkout has unrelated uncommitted work** that blocks
+  `checkout main`, that *is* "something went wrong": surface the exact state
+  and stop — never stash or discard Rahul's WIP to force the merge.
+- The work is safe on the worktree branch regardless; only the merge + rebuild
+  is what makes it testable.
+
+### Build & reload reference
 
 ```bash
 bun install
-bun run dev      # HMR Chrome with the unpacked extension
-bun run build    # produces dist/chrome-mv3
-bun run compile  # tsc --noEmit (no JS output)
+bun run dev      # HMR Chromium with the unpacked extension (smoke only)
+bun run build    # → dist/chrome-mv3  (THIS is what Chrome loads)
+bun run compile  # tsc --noEmit, no JS output (typecheck gate)
 ```
 
-Loading the production build: open `chrome://extensions`, enable Developer mode,
-**Load unpacked** → pick `dist/chrome-mv3` (NOT `.output` — `outDir` is `dist`
-in `wxt.config.ts` so the folder is selectable in the Finder dialog without
-toggling hidden files).
-
-To test changes: `bun run build`, then hit the refresh icon on the UBuddy card
-in `chrome://extensions`. No need to remove/re-add.
+First-time load only: `chrome://extensions` → Developer mode → **Load
+unpacked** → pick `dist/chrome-mv3` (NOT `.output` — `outDir` is `dist` in
+`wxt.config.ts`, so the folder is selectable in the Finder dialog without
+toggling hidden files). After that, every change is just **rebuild + refresh
+icon** — no remove/re-add.
 
 ## Architecture in one screen
 
@@ -376,6 +447,26 @@ These are real but deliberately not addressed yet:
   than subsequent ones. A silent dummy request on panel open would mask it.
 - **Cross-browser.** Currently Chromium-only (uses `chrome.sidePanel`).
   Firefox port would need `sidebarAction` + the WebExtensions polyfill.
+
+## When something feels off
+
+1. **Build fails:** run `bun run compile` first — it isolates type errors from
+   WXT bundling. Prod-only breakage that `bun run dev` swallows shows up in
+   `bun run build`.
+2. **Extension stale / not loading:** confirm `dist/chrome-mv3` was rebuilt
+   *on `main`* (working-agreement step 2), then refresh icon. A stale `dist/`
+   left by another branch is the usual culprit — not a code bug.
+3. **Parser stopped matching:** UWorld changed their DOM. Don't guess —
+   `src/uworld/selectors.ts` is the only file to touch, and you need a real
+   sample (see below). The `.mhtml` capture is ground truth.
+4. **Settings wrong after a code change:** stale `chrome.storage.local`
+   survives reloads — check `loadSettings()`'s `migrate()` step.
+5. **TTS / LLM 4xx:** an OpenRouter quirk — the OpenAPI spec at
+   `/Users/radev/Downloads/openapi.yaml` is authoritative; also check SSE
+   error frames (`{ error: { message } }`).
+6. **StepBuddy log fails:** auth/session. `src/stepbuddy/log.ts` owns the only
+   path and all dedup; the RPC contract mirrors
+   `stepbuddy-v2/lib/constants.ts` — they move in lockstep.
 
 ## Asking the user vs. assuming
 

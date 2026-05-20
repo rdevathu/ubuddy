@@ -4,6 +4,10 @@
  * Each entry has multiple candidate selectors tried in order. UWorld occasionally
  * tweaks class names, so we lean on stable class fragments and ARIA roles before
  * specific class names. When everything breaks, this is the only file to edit.
+ *
+ * Post-grade selectors were verified against a captured `.mhtml`. The icons
+ * (`fa-check` / `fa-times`) and `mat-radio-checked` class are what UWorld
+ * actually paints — `[class*="correct"]` matches never hit on the real DOM.
  */
 export interface SelectorSet {
   /** Container that wraps the question stem text. */
@@ -16,17 +20,44 @@ export interface SelectorSet {
   choiceItem: string[];
   /** The radio input within a choice row (for forwarded clicks). */
   choiceRadio: string[];
-  /** Marker shown next to the correct answer (e.g. green check). */
+  /**
+   * Element inside a row when the row IS the correct answer (post-grade).
+   * UWorld renders a `fa-check` icon in the left `<td>`; absent on every
+   * other row and absent on every row pre-grade.
+   */
   correctMarker: string[];
-  /** Marker shown next to the user's wrong pick (e.g. red X). */
+  /**
+   * Element inside a row when the row is the user's WRONG pick (post-grade).
+   * UWorld renders `fa-times` in the left `<td>` on the picked row when the
+   * pick was wrong; absent on the correct row even if the user picked it,
+   * and absent on every row pre-grade.
+   */
   incorrectMarker: string[];
+  /**
+   * Element inside a row when the row's radio is checked (i.e. the row the
+   * user picked, irrespective of correctness). Combine with `correctMarker`
+   * to detect "picked AND correct".
+   */
+  userPickMarker: string[];
+  /**
+   * Single-query check that flips from absent (ungraded) to present (graded).
+   * Every choice's radio becomes `mat-radio-disabled` the instant the
+   * question is graded; none are disabled pre-submit.
+   */
+  gradedFlag: string[];
   /** Container that holds the explanation panel once submitted. */
   explanationContainer: string[];
+  /**
+   * UWorld's "standards" block at the bottom of the explanation: a row of
+   * `.standard` columns, each with a `.standard-description` (value) and a
+   * `.standard-header` (label — "Subject" / "System" / "Topic"). Only renders
+   * post-grade and is what we use to deterministically map onto StepBuddy's
+   * SystemTag instead of guessing with the LLM.
+   */
+  metadataField: string[];
 }
 
 export const SELECTORS: SelectorSet = {
-  // UWorld's actual stem container is `#questionText` (Angular app id). Class
-  // fallbacks cover other UWorld surfaces (USMLE, Step 2/3, NBME, etc.).
   questionContainer: [
     '#questionText',
     '[class*="QuestionStem"]',
@@ -35,14 +66,16 @@ export const SELECTORS: SelectorSet = {
     '[class*="question-content"] > p',
     'div[class*="stem"]',
   ],
+  // QID + "Item: X of Y" both live in `div.question-details`. Parse the
+  // parent's text — the inner span only carries the label, not the number.
   questionIdContainer: [
+    'div.question-details',
+    '[class*="question-details"]',
     '[class*="QuestionId"]',
     '[class*="question-id"]',
     '[data-testid*="question-id"]',
     '.questionindex',
   ],
-  // UWorld puts every choice in a single `<table id="answerContainer" class="answer-container">`.
-  // Each `mat-radio-group` only wraps one choice, so the table itself is our list anchor.
   choiceList: [
     '#answerContainer',
     '.answer-container',
@@ -50,8 +83,6 @@ export const SELECTORS: SelectorSet = {
     '[class*="AnswerChoices"]',
     '[class*="answer-choices"]',
   ],
-  // Each choice is a `<tr class="...answer-choice-background...">` containing
-  // a letter span, a radio, and an answer-choice-content cell.
   choiceItem: [
     'tr.answer-choice-background',
     '.answer-choice-background',
@@ -60,19 +91,30 @@ export const SELECTORS: SelectorSet = {
     'label',
   ],
   choiceRadio: ['input[type="radio"]', '[role="radio"]'],
+  // Scope to `td.left-td` so we can't accidentally match an icon inside the
+  // answer text itself.
   correctMarker: [
-    '[class*="correct"]:not([class*="incorrect"])',
-    '[class*="Correct"]:not([class*="Incorrect"])',
-    'svg[aria-label*="correct" i]',
-    '[data-correct="true"]',
+    'td.left-td i.fa-check',
+    'td.left-td .fa-check',
+    'i.fa-check',
+    '.fa-check',
   ],
   incorrectMarker: [
-    '[class*="incorrect"]',
-    '[class*="Incorrect"]',
-    '[class*="wrong"]',
-    'svg[aria-label*="incorrect" i]',
+    'td.left-td i.fa-times',
+    'td.left-td .fa-times',
+    'i.fa-times',
+    '.fa-times',
   ],
-  // UWorld renders the explanation into `<div id="explanation">` once submitted.
+  userPickMarker: [
+    'mat-radio-button.mat-radio-checked',
+    '.mat-radio-checked',
+    'input[type="radio"]:checked',
+  ],
+  gradedFlag: [
+    '#answerContainer mat-radio-button.mat-radio-disabled',
+    '#answerContainer .mat-radio-disabled',
+    '#answerContainer [aria-disabled="true"][role="radio"]',
+  ],
   explanationContainer: [
     '#explanation',
     '.explanation #explanation',
@@ -80,20 +122,32 @@ export const SELECTORS: SelectorSet = {
     '[class*="explanation"]:not(.explanation-placeholder)',
     '[data-testid*="explanation"]',
   ],
+  metadataField: [
+    '.standards .standard',
+    '[class*="standards"] [class*="standard"]:not([class*="standard-"])',
+  ],
 };
 
 export function queryFirst(root: ParentNode, selectors: string[]): Element | null {
   for (const s of selectors) {
-    const el = root.querySelector(s);
-    if (el) return el;
+    try {
+      const el = root.querySelector(s);
+      if (el) return el;
+    } catch {
+      // some selectors may be rejected by the engine — skip
+    }
   }
   return null;
 }
 
 export function queryAll(root: ParentNode, selectors: string[]): Element[] {
   for (const s of selectors) {
-    const els = Array.from(root.querySelectorAll(s));
-    if (els.length > 0) return els;
+    try {
+      const els = Array.from(root.querySelectorAll(s));
+      if (els.length > 0) return els;
+    } catch {
+      // skip selectors the engine rejects
+    }
   }
   return [];
 }

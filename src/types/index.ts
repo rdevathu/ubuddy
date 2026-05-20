@@ -1,11 +1,3 @@
-export type WhyWrong =
-  | 'knowledge_gap'
-  | 'misread'
-  | 'forgot_value'
-  | 'wrong_ddx'
-  | 'test_strategy'
-  | 'other';
-
 export interface AnswerChoice {
   letter: string;
   text: string;
@@ -14,19 +6,9 @@ export interface AnswerChoice {
   isUserPick?: boolean;
 }
 
-export interface LabValue {
-  name: string;
-  value: string;
-  unit?: string;
-  reference?: string;
-  status: 'normal' | 'low' | 'high' | 'unknown';
-}
-
 export interface ParsedQuestion {
   questionHash: string;
   stem: string;
-  vitals: LabValue[];
-  labs: LabValue[];
   choices: AnswerChoice[];
   questionId?: string;
   questionNumber?: string;
@@ -45,6 +27,18 @@ export interface ParsedExplanation {
   correctLetter: string;
   userLetter?: string;
   wasCorrect: boolean;
+  /**
+   * UWorld's labeled metadata, scraped from the `.standards` block at the
+   * bottom of the explanation:
+   *   - subject: discipline / rotation (e.g. "Pediatrics", "Internal Medicine")
+   *   - system:  organ-system taxonomy (e.g. "Gastrointestinal & Nutrition") —
+   *              this is what we map onto StepBuddy's SystemTag deterministically
+   *   - topic:   specific diagnosis / concept (e.g. "Necrotizing enterocolitis")
+   * Any field may be absent on older / unusual question types.
+   */
+  subject?: string;
+  system?: string;
+  topic?: string;
 }
 
 export interface ChatMessage {
@@ -64,46 +58,26 @@ export interface QuestionRecord {
   correctAnswer: string;
   wasCorrect: boolean;
   explanationText?: string;
-  whyWrong?: WhyWrong;
-  keyLearning?: string;
+  /** The student's own takeaway — the rule sent to StepBuddy on log. */
+  rule?: string;
   /**
-   * The uuid returned by StepBuddy's `log_mistake` RPC once this miss has been
-   * pushed. Presence = "already logged" — the dedup guard so an SPA re-emit or
-   * panel reopen never double-logs (the RPC has no upsert; every call inserts).
+   * The uuid returned by StepBuddy's `log_mistake` RPC once this question has
+   * been logged. Presence = "already logged" — the dedup guard so an SPA
+   * re-emit or panel reopen never double-logs (the RPC has no upsert; every
+   * call inserts). Used for both wrong-answer mistakes and right-answer
+   * "pure_learning" entries.
    */
   stepbuddyMistakeId?: string;
 }
 
 export interface AppSettings {
   openrouterApiKey: string;
-  llmModel: string;
-  resetChatOnNewQuestion: boolean;
-  /**
-   * StepBuddy mistake-log integration. When enabled and signed in, every wrong
-   * answer is auto-pushed to the user's StepBuddy mistake log. Credentials are
-   * stored here (same posture as `openrouterApiKey`: chrome.storage.local,
-   * never injected into the page) so the session can be silently re-minted if
-   * the refresh token is ever rejected.
-   */
-  stepbuddyEnabled: boolean;
   stepbuddyEmail: string;
   stepbuddyPassword: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   openrouterApiKey: '',
-  llmModel: '',
-  resetChatOnNewQuestion: true,
-  stepbuddyEnabled: false,
   stepbuddyEmail: '',
   stepbuddyPassword: '',
-};
-
-export const WHY_WRONG_LABELS: Record<WhyWrong, string> = {
-  knowledge_gap: 'Knowledge gap',
-  misread: 'Misread question',
-  forgot_value: 'Forgot lab/cutoff value',
-  wrong_ddx: 'Wrong differential',
-  test_strategy: 'Test-taking strategy',
-  other: 'Other',
 };

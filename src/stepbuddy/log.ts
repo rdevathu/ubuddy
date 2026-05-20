@@ -1,29 +1,27 @@
 /**
- * The single entry point for "this answer was wrong → push it to StepBuddy".
+ * The single entry point for "push this question to StepBuddy". Handles both
+ * wrong-answer mistakes and right-answer "pure_learning" entries — they're
+ * the same RPC; only `miss_type` differs.
  *
- * There is NO auto-logger. The ONLY caller is ReflectionForm's explicit
- * "Save & log to StepBuddy" button (and its retry on failure), so the row
- * always carries the student's own words — no race, no update RPC needed.
- * Dedup still lives here, not at the call site, because:
+ * The student's `rule` and `miss_type` come from the caller (the inline log
+ * card). The `system_tag` is mapped deterministically from UWorld's own
+ * `.standards` "System" label (see classify.ts:mapUworldSystem). No LLM call
+ * is needed at log time — the LLM only ever runs when the student clicks
+ * "Auto-draft" earlier to seed the rule field.
  *
- *   - the RPC has no upsert — every call inserts a row, so a double-click,
- *     a retry after a *partial* success, or an SPA re-emit / panel reopen
- *     would duplicate the mistake. We guard on the persisted
- *     `stepbuddyMistakeId` (survives panel reopen / SPA re-emit) AND an
- *     in-memory in-flight set (guards the gap before the id is persisted).
- *
- * Result is a plain discriminated union — callers turn it into UI, this never
- * throws for an expected condition (disabled, correct, already logged, no
- * credentials, no way to produce a rule).
+ * Dedup lives here, not at the call site, because the RPC has no upsert: a
+ * double-click / SPA re-emit / panel reopen would otherwise duplicate the
+ * row. Guards: the persisted `stepbuddyMistakeId` (survives panel reopen)
+ * plus an in-memory in-flight set (covers the gap before id is persisted).
  */
 
-import type { AppSettings, ParsedExplanation, ParsedQuestion, WhyWrong } from '../types';
+import type { AppSettings, ParsedExplanation, ParsedQuestion } from '../types';
 import { getQuestionByHash, setStepbuddyMistakeId } from '../storage/db';
-import { classifyMistake, mapWhyWrong } from './classify';
-import { getSession, logMistake } from './client';
+import { mapUworldSystem } from './classify';
+import { getSession, logMistake, type MissType } from './client';
 
 export type LogResult =
-  | { ok: true; id: string; system: string; miss: string }
+  | { ok: true; id: string; system: string; miss: MissType }
   | { ok: false; skipped: true; reason: string }
   | { ok: false; skipped?: false; error: string };
 
@@ -36,18 +34,24 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-export async function logWrongAnswer(opts: {
+export interface LogOpts {
   settings: AppSettings;
   question: ParsedQuestion;
   explanation: ParsedExplanation;
-  /** Present when triggered from the reflection form — the student's own words win. */
-  reflection?: { whyWrong?: WhyWrong; keyLearning?: string };
-}): Promise<LogResult> {
-  const { settings, question, explanation, reflection } = opts;
+  /** The student's takeaway. Required — the RPC rejects an empty rule. */
+  rule: string;
+  /** How they want this categorized. `pure_learning` for right-answer logs. */
+  missType: MissType;
+}
+
+export async function logToStepBuddy(opts: LogOpts): Promise<LogResult> {
+  const { question, explanation, rule, missType } = opts;
   const hash = question.questionHash;
 
-  if (!settings.stepbuddyEnabled) return { ok: false, skipped: true, reason: 'disabled' };
-  if (explanation.wasCorrect) return { ok: false, skipped: true, reason: 'not a miss' };
+  const trimmedRule = rule.trim();
+  if (!trimmedRule) {
+    return { ok: false, error: 'Write a takeaway before logging — the rule field can\'t be empty.' };
+  }
 
   const existing = await getQuestionByHash(hash);
   if (existing?.stepbuddyMistakeId) {
@@ -60,38 +64,13 @@ export async function logWrongAnswer(opts: {
   inFlight.add(hash);
 
   try {
-    const hasLLM = !!settings.openrouterApiKey && !!settings.llmModel;
-    let system_tag: import('./client').SystemTag = 'Misc';
-    let miss_type: import('./client').MissType = mapWhyWrong(reflection?.whyWrong);
-    let rule = (reflection?.keyLearning ?? '').trim();
-
-    if (hasLLM) {
-      const c = await classifyMistake({
-        apiKey: settings.openrouterApiKey,
-        model: settings.llmModel,
-        question,
-        explanation,
-      });
-      system_tag = c.system_tag;
-      // The student's explicit reflection beats the model's guess.
-      rule = rule || c.rule;
-      miss_type = reflection?.whyWrong ? mapWhyWrong(reflection.whyWrong) : c.miss_type;
-    } else if (!rule) {
-      // No LLM and no reflection → we have no defensible rule. The RPC requires
-      // a non-empty one, so don't send junk; tell the caller why.
-      return {
-        ok: false,
-        error:
-          'Pick a chat model in Settings (for an auto-written rule) or save a reflection first.',
-      };
-    }
-
+    const system_tag = mapUworldSystem(explanation.system);
     const id = await logMistake({
       p_date: todayLocal(),
       p_source: 'UWorld',
       p_system_tag: system_tag,
-      p_rule: rule,
-      p_miss_type: miss_type,
+      p_rule: trimmedRule,
+      p_miss_type: missType,
       p_identifier: question.questionId?.slice(0, 80),
       p_source_other: null,
       p_tags: [],
@@ -99,7 +78,7 @@ export async function logWrongAnswer(opts: {
     });
 
     await setStepbuddyMistakeId(hash, id);
-    return { ok: true, id, system: system_tag, miss: miss_type };
+    return { ok: true, id, system: system_tag, miss: missType };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   } finally {

@@ -1,38 +1,28 @@
-import type { LabValue } from '../types';
+/**
+ * Static reference table of USMLE/UWorld lab ranges.
+ *
+ * Transcribed exactly from the official lab-value sheet (the 8 reference
+ * screenshots). The extension USED to extract labs from the stem with regex
+ * and flag abnormals in an Objective Data panel; that was unreliable enough
+ * to be net-negative, so it was removed. This file is now pure data — kept
+ * around because the table itself is hard-won and may be useful later as a
+ * lookup surface (e.g. "what's the official reference range for ALT?").
+ *
+ * Where a lab's range varies by sex, `low`/`high` encode the broadest adult
+ * union; the per-sex split lives in `reference`.
+ */
 
-interface RefRange {
-  /** Canonical lab name, lowercase. */
+export interface LabReference {
   name: string;
-  /** Display name for the UI. */
   display: string;
-  /** Match patterns (lowercased, anchored externally). */
   aliases: string[];
-  /** Inclusive low bound. */
   low: number;
-  /** Inclusive high bound. */
   high: number;
   unit?: string;
-  /** Human-readable official range, shown verbatim in the Objective Data UI. */
   reference: string;
 }
 
-/**
- * Reference ranges transcribed EXACTLY from the official USMLE/UWorld lab
- * value sheet (the 8 reference screenshots). These are the only labs we flag;
- * everything else the student reads off the screen directly.
- *
- * Where a lab's official range varies by sex, we encode the UNION (broadest
- * acceptable adult range) for the high/low test and keep the per-sex split in
- * the `reference` string. A false negative (not flagging a value that's
- * abnormal for one sex) is preferable to a false positive here because we
- * don't know the patient's sex from a bare "Hgb 14" token and the student can
- * always glance at the question.
- *
- * Vitals (BP/pulse/respirations/temperature/SpO2) are NOT on the official lab
- * sheet but are kept as objective data with standard physiologic cutoffs —
- * temperature is always normalized to Fahrenheit (see extractLabs).
- */
-const REF_RANGES: RefRange[] = [
+export const LAB_REFERENCES: LabReference[] = [
   // ── Electrolytes, serum ────────────────────────────────────────────────
   { name: 'na', display: 'Sodium', aliases: ['na', 'sodium'], low: 136, high: 146, unit: 'mEq/L', reference: '136-146 mEq/L' },
   { name: 'k', display: 'Potassium', aliases: ['k', 'potassium'], low: 3.5, high: 5.0, unit: 'mEq/L', reference: '3.5-5.0 mEq/L' },
@@ -44,8 +34,6 @@ const REF_RANGES: RefRange[] = [
   { name: 'phos', display: 'Phosphorus', aliases: ['phos', 'phosphorus', 'phosphate'], low: 3.0, high: 4.5, unit: 'mg/dL', reference: '3.0-4.5 mg/dL' },
   { name: 'bun', display: 'BUN', aliases: ['bun', 'urea nitrogen'], low: 7, high: 18, unit: 'mg/dL', reference: '7-18 mg/dL' },
   { name: 'cr', display: 'Creatinine', aliases: ['cr', 'creatinine'], low: 0.6, high: 1.2, unit: 'mg/dL', reference: '0.6-1.2 mg/dL' },
-  // Glucose: union of fasting (70-110) and random (<140) so a normal random
-  // glucose isn't false-flagged as high; per-context split kept in reference.
   { name: 'glucose', display: 'Glucose', aliases: ['glucose', 'glu'], low: 70, high: 140, unit: 'mg/dL', reference: 'fasting 70-110, random <140 mg/dL' },
   { name: 'uric', display: 'Uric acid', aliases: ['uric acid', 'uric'], low: 3.0, high: 8.2, unit: 'mg/dL', reference: '3.0-8.2 mg/dL' },
   { name: 'tp', display: 'Total protein', aliases: ['total protein', 'tp'], low: 6.0, high: 7.8, unit: 'g/dL', reference: '6.0-7.8 g/dL' },
@@ -59,8 +47,7 @@ const REF_RANGES: RefRange[] = [
   { name: 'ldh', display: 'LDH', aliases: ['ldh', 'lactate dehydrogenase'], low: 45, high: 200, unit: 'U/L', reference: '45-200 U/L' },
   { name: 'ck', display: 'Creatine kinase', aliases: ['creatine kinase', 'ck', 'cpk'], low: 10, high: 90, unit: 'U/L', reference: 'M 25-90, F 10-70 U/L' },
   { name: 'osm', display: 'Osmolality', aliases: ['osmolality', 'osm', 'serum osmolality'], low: 275, high: 295, unit: 'mOsmol/kg', reference: '275-295 mOsmol/kg' },
-  // Lipids — only the abnormal direction is meaningful, so low bounds are
-  // open (HDL is the exception: low HDL is the pathologic finding).
+  // ── Lipids (only abnormal direction meaningful; HDL inverted) ──────────
   { name: 'chol', display: 'Total cholesterol', aliases: ['total cholesterol', 'cholesterol'], low: -Infinity, high: 240, unit: 'mg/dL', reference: 'normal <200, high >240 mg/dL' },
   { name: 'ldl', display: 'LDL', aliases: ['ldl'], low: -Infinity, high: 160, unit: 'mg/dL', reference: '<160 mg/dL' },
   { name: 'hdl', display: 'HDL', aliases: ['hdl'], low: 40, high: 60, unit: 'mg/dL', reference: '40-60 mg/dL' },
@@ -103,140 +90,16 @@ const REF_RANGES: RefRange[] = [
   { name: 'po2', display: 'PO₂', aliases: ['po2', 'pao2'], low: 75, high: 105, unit: 'mm Hg', reference: '75-105 mm Hg' },
   // ── Cardiac ────────────────────────────────────────────────────────────
   { name: 'troponin', display: 'Troponin I', aliases: ['troponin', 'troponin i', 'tni'], low: -Infinity, high: 0.04, unit: 'ng/mL', reference: '<0.04 ng/mL' },
-  // ── CSF (multi-word aliases keep these distinct from serum) ─────────────
+  // ── CSF ────────────────────────────────────────────────────────────────
   { name: 'csf_glu', display: 'CSF glucose', aliases: ['csf glucose'], low: 40, high: 70, unit: 'mg/dL', reference: '40-70 mg/dL' },
   { name: 'csf_pro', display: 'CSF protein', aliases: ['csf protein', 'csf proteins'], low: -Infinity, high: 40, unit: 'mg/dL', reference: '<40 mg/dL' },
   { name: 'csf_cell', display: 'CSF cell count', aliases: ['csf cell count'], low: 0, high: 5, unit: '/mm³', reference: '0-5/mm³' },
   { name: 'csf_pres', display: 'CSF pressure', aliases: ['csf pressure', 'opening pressure'], low: 70, high: 180, unit: 'mm H₂O', reference: '70-180 mm H₂O' },
   // ── Renal ──────────────────────────────────────────────────────────────
   { name: 'crcl', display: 'Creatinine clearance', aliases: ['creatinine clearance', 'crcl'], low: 88, high: 137, unit: 'mL/min', reference: 'M 97-137, F 88-128 mL/min' },
-  // ── Vitals (not on the official lab sheet; standard physiologic cutoffs) ─
+  // ── Vitals (standard physiologic cutoffs; not on the official sheet) ──
   { name: 'pulse', display: 'Pulse', aliases: ['pulse', 'heart rate', 'hr'], low: 60, high: 100, unit: '/min', reference: '60-100/min' },
   { name: 'rr', display: 'Respirations', aliases: ['respirations', 'rr', 'respiratory rate'], low: 12, high: 20, unit: '/min', reference: '12-20/min' },
   { name: 'temp_f', display: 'Temperature', aliases: ['temperature', 'temp'], low: 97.0, high: 99.5, unit: '°F', reference: '97.0-99.5 °F' },
   { name: 'spo2', display: 'SpO₂', aliases: ['spo2', 'o2 sat', 'oxygen saturation'], low: 95, high: 100, unit: '%', reference: '95-100%' },
 ];
-
-const ALIAS_INDEX = new Map<string, RefRange>();
-for (const r of REF_RANGES) {
-  for (const a of r.aliases) ALIAS_INDEX.set(a.toLowerCase(), r);
-}
-
-/**
- * Lab tokens look like:
- *   "Na 142", "K 3.4 mEq/L", "Hgb 8.2", "BP 80/50", "platelets 250,000",
- *   "Creatinine 1.8 mg/dL", "TSH 0.2"
- * BP is special-cased.
- */
-const LAB_REGEX = /\b([A-Za-z][A-Za-z\s\-]{1,30}?)\s*(?:is|=|:)?\s*(\d+(?:[.,]\d+)?)\s*(\/\s*\d+(?:[.,]\d+)?)?\s*([a-zA-Z%°/^0-9\-µ]+)?/g;
-const BP_REGEX = /\b(?:blood pressure|bp)\s*(?:is|=|:)?\s*(\d{2,3})\s*\/\s*(\d{2,3})/gi;
-
-function classify(value: number, range: RefRange): LabValue['status'] {
-  if (Number.isNaN(value)) return 'unknown';
-  if (value < range.low) return 'low';
-  if (value > range.high) return 'high';
-  return 'normal';
-}
-
-function celsiusToFahrenheit(c: number): number {
-  return Math.round(((c * 9) / 5 + 32) * 10) / 10;
-}
-
-/** Return true if the unit string indicates Celsius. */
-function isCelsius(unit?: string): boolean {
-  if (!unit) return false;
-  const u = unit.trim();
-  return /(^|[^a-z])C$/i.test(u) || u.includes('°C') || u.toLowerCase() === 'c';
-}
-
-export function extractLabs(text: string): LabValue[] {
-  if (!text) return [];
-  const labs: LabValue[] = [];
-  const seen = new Set<string>();
-
-  // Special: BP uses systolic/diastolic, not a single bound.
-  let bpMatch: RegExpExecArray | null;
-  while ((bpMatch = BP_REGEX.exec(text))) {
-    const sys = parseInt(bpMatch[1], 10);
-    const dia = parseInt(bpMatch[2], 10);
-    if (Number.isNaN(sys) || Number.isNaN(dia)) continue;
-    const status: LabValue['status'] =
-      sys < 90 || dia < 60 ? 'low' : sys > 140 || dia > 90 ? 'high' : 'normal';
-    const key = `bp-${sys}-${dia}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    labs.push({
-      name: 'BP',
-      value: `${sys}/${dia}`,
-      unit: 'mm Hg',
-      reference: '90/60-140/90 mm Hg',
-      status,
-    });
-  }
-
-  let m: RegExpExecArray | null;
-  while ((m = LAB_REGEX.exec(text))) {
-    const rawName = m[1].trim().toLowerCase();
-    const valueStr = m[2].replace(',', '');
-    const slashSegment = m[3]; // skip if pair like 80/50 — handled by BP
-    if (slashSegment) continue;
-    const range = ALIAS_INDEX.get(rawName) ?? matchAliasFuzzy(rawName);
-    if (!range) continue;
-    let value = parseFloat(valueStr);
-    if (Number.isNaN(value)) continue;
-    let unit = m[4]?.trim() || range.unit;
-
-    // Temperature normalization: always store/display in Fahrenheit.
-    if (range.name === 'temp_f' && (isCelsius(unit) || (value < 50 && !unit))) {
-      value = celsiusToFahrenheit(value);
-      unit = '°F';
-    }
-
-    const displayValue = Number.isInteger(value) ? value.toString() : value.toFixed(1);
-    const key = `${range.name}-${displayValue}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    labs.push({
-      name: range.display,
-      value: displayValue,
-      unit,
-      reference: range.reference,
-      status: classify(value, range),
-    });
-  }
-  return labs;
-}
-
-function matchAliasFuzzy(token: string): RefRange | null {
-  // Allow multi-word aliases ("free t4", "csf glucose") by checking suffix.
-  // Longest alias first so "csf glucose" wins over a bare "glucose".
-  let best: RefRange | null = null;
-  let bestLen = 0;
-  for (const [alias, range] of ALIAS_INDEX) {
-    if (alias.includes(' ') && token.endsWith(alias) && alias.length > bestLen) {
-      best = range;
-      bestLen = alias.length;
-    }
-  }
-  return best;
-}
-
-export function abnormalLabs(labs: LabValue[]): LabValue[] {
-  return labs.filter((l) => l.status === 'low' || l.status === 'high');
-}
-
-/**
- * Compact, unit-free rendering for the LLM intense summary: no units (mm Hg,
- * °C/°F, /min, mg/dL, etc.) — they bloat the summary and slow the reader down.
- * BP "80/50" → "80 over 50".
- */
-export function labValueNoUnits(l: LabValue): string {
-  const v = l.value.includes('/') ? l.value.replace('/', ' over ') : l.value;
-  return `${l.name} ${v}, ${l.status}`;
-}
-
-export function summarizeLabsForLLM(labs: LabValue[]): string {
-  const abnormal = abnormalLabs(labs);
-  if (abnormal.length === 0) return 'no abnormal vitals or labs';
-  return abnormal.map(labValueNoUnits).join('; ');
-}

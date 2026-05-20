@@ -37,21 +37,58 @@ export interface StepBuddySession {
 /** Refresh this many seconds before the token actually expires. */
 const EXPIRY_SKEW_S = 60;
 
-// ── allowed enum values (mirror StepBuddy's lib/constants.ts) ────────────────
-// The RPC validates these server-side; keeping the lists here lets us fail
-// fast / coerce before spending a network round-trip.
+// ── allowed enum values (mirror StepBuddy's lib/constants.ts EXACTLY) ────────
+// The full display strings are what the RPC validates against — short forms
+// like "Cardio" or "Misc" are rejected as "invalid system_tag: …". If
+// StepBuddy edits its constants, update these in lockstep.
 export const SYSTEM_TAGS = [
-  'Cardio', 'Pulm', 'GI', 'Renal', 'Endo', 'Heme', 'ID', 'Neuro', 'Psych',
-  'MSK', 'Derm', 'Repro', 'OB', 'Peds', 'Surg', 'EM', 'Biostat', 'Ethics',
-  'QI', 'Pharm', 'Genetics', 'Misc',
+  'Allergy & Immunology',
+  'Biostatistics & Epidemiology',
+  'Cardiovascular System (CV)',
+  'Dermatology (DERM)',
+  'Ear, Nose & Throat (ENT)',
+  'Endocrine (ENDO)',
+  'Gastrointestinal (GI)',
+  'Genetics',
+  'Gynecology (GYN)',
+  'Hematology & Oncology (HEME-ONC)',
+  'Infectious Diseases (ID)',
+  'Male Reproductive System (URO)',
+  'Miscellaneous (MISC)',
+  'MSK & Orthopedics',
+  'Nephrology (RENAL)',
+  'Nervous System (NEURO)',
+  'Obstetrics (OB)',
+  'Ophthalmology (OPHTHO)',
+  'Pediatrics (PEDS)',
+  'Poisoning & Environmental Exposure',
+  'Psychiatric/Behavioral (PSYCH)',
+  'Pulmonary & Critical Care (PULM)',
+  'Social Sciences (Ethics/Legal/QI)',
 ] as const;
 export type SystemTag = (typeof SYSTEM_TAGS)[number];
 
+/** Safe default when we can't determine the system tag. */
+export const DEFAULT_SYSTEM_TAG: SystemTag = 'Miscellaneous (MISC)';
+
 export const MISS_TYPES = [
   'knowledge', 'framework', 'stem_error', 'right_wrong_reason', 'confused',
-  'silly_mistake', 'got_lucky', 'other',
+  'silly_mistake', 'got_lucky', 'pure_learning', 'other',
 ] as const;
 export type MissType = (typeof MISS_TYPES)[number];
+
+/** User-facing labels for each miss_type — mirrors StepBuddy's UI labels. */
+export const MISS_TYPE_LABELS: Record<MissType, string> = {
+  knowledge: 'Knowledge gap',
+  framework: 'Framework / approach',
+  stem_error: 'Stem misread',
+  right_wrong_reason: 'Right answer, wrong reason',
+  confused: 'Confused',
+  silly_mistake: 'Careless slip',
+  got_lucky: 'Got lucky',
+  pure_learning: 'Pure learning',
+  other: 'Other',
+};
 
 export const SOURCES = [
   'UWorld', 'AMBOSS', 'NBME', 'UWSA', 'Free 120', 'Other',

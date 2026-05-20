@@ -8,7 +8,12 @@ export function QuestionView() {
   if (!question) {
     return (
       <div className="card">
-        <div className="empty">Open a UWorld question — UBuddy will pick it up automatically.</div>
+        <div className="empty">
+          Open a UWorld question — UBuddy will pick it up automatically.
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--fg-dim)' }}>
+            Not seeing one? Try refreshing the page, or clicking Previous / Next to re-trigger UBuddy.
+          </div>
+        </div>
       </div>
     );
   }

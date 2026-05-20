@@ -3,12 +3,13 @@
 For Claude Code sessions in this repo. **Pick this up cold; everything you
 need is here.** Read top-to-bottom before non-trivial work.
 
-UBuddy is a Chromium MV3 extension (WXT + React) that runs a context-aware
-chat about UWorld questions, offers an optional tight LLM "blaze-through"
-summary, gameifies the answer flow, and one-click-logs wrong answers to
-StepBuddy. (Audio/voice read-aloud was removed — see "Audio/voice — REMOVED".)
-**Personal-use only — one user, one machine, local-only repo: no git remote,
-no CI, no Chrome Web Store listing.**
+UBuddy is a Chromium MV3 extension (WXT + React) that runs alongside
+UWorld, generates an optional tight LLM "blaze-through" summary of the
+stem, offers a context-aware chat, and one-click-logs every graded
+question — wrong **or** right — to StepBuddy with the student's own
+takeaway. (Audio/voice read-aloud existed in v0; it is **fully removed**.
+See "Audio/voice — REMOVED".) **Personal-use only — one user, one machine,
+local-only repo: no git remote, no CI, no Chrome Web Store listing.**
 
 ---
 
@@ -20,10 +21,11 @@ no CI, no Chrome Web Store listing.**
   the entire loop is clicking the refresh icon on the UBuddy card in
   `chrome://extensions`. Design every task so that is genuinely all he has to
   do — anything more is a regression in the workflow.
-- **Companion app:** wrong answers log to **StepBuddy v2**
+- **Companion app:** every graded UWorld question logs to **StepBuddy v2**
   (`/Users/radev/Developer/stepbuddy-v2`, https://stepbuddy.devathulab.com) via
   the Supabase `log_mistake` RPC. Relevant only for the `src/stepbuddy/*`
-  contract below; never edit that repo from here.
+  contract below; never edit that repo from here. Read its CLAUDE.md when
+  you need the RPC's full schema or the canonical enum lists.
 
 ---
 
@@ -93,6 +95,26 @@ unpacked** → pick `dist/chrome-mv3` (NOT `.output` — `outDir` is `dist` in
 toggling hidden files). After that, every change is just **rebuild + refresh
 icon** — no remove/re-add.
 
+---
+
+## Stack
+
+| | |
+|--|--|
+| Extension framework | WXT 0.20 (MV3, TypeScript, HMR) + `@wxt-dev/module-react` |
+| UI                  | React 19 + plain CSS (one file: `src/styles/panel.css`) — no Tailwind |
+| App state           | Zustand (`src/state/store.ts`) |
+| Local persistence   | Dexie / IndexedDB (`src/storage/db.ts`, one `questions` table) + `chrome.storage.local` for settings + the StepBuddy session |
+| LLM                 | OpenRouter chat completions, raw `fetch` + SSE parsing (`src/llm/client.ts`). **Model pinned** in `src/llm/model.ts` — no discovery, no picker |
+| StepBuddy I/O       | Supabase Auth (raw `fetch`) + the `log_mistake` Postgres RPC. **No `@supabase/supabase-js`** (its GoTrue client wants `localStorage` + a timer, both unreliable in MV3) |
+| Runtime targets     | Chromium-only today (uses `chrome.sidePanel`). WXT can build Firefox but the `sidebarAction` work hasn't been done |
+
+Why: zero ops, no server, no API key Rahul has to share. Every privileged
+call (LLM, Supabase) originates from the side panel, never injected into
+the page.
+
+---
+
 ## Architecture in one screen
 
 ```
@@ -101,10 +123,10 @@ icon** — no remove/re-add.
 │   content.ts     │◀──▶│   background.ts  │◀──▶│   sidepanel/     │
 │                  │    │                  │    │     App.tsx      │
 │ src/uworld/      │    │ - opens panel    │    │ src/panel/*      │
-│   selectors.ts   │    │ - keyboard cmds  │    │ src/llm/*        │
-│   parser.ts      │    │ - routes msgs    │    │ src/state/*      │
+│   selectors.ts   │    │ - toggle-panel   │    │ src/llm/*        │
+│   parser.ts      │    │   command        │    │ src/state/*      │
 │   observer.ts    │    │                  │    │ src/storage/*    │
-│   labs.ts        │    │                  │    │                  │
+│   labs.ts (data) │    │                  │    │ src/stepbuddy/*  │
 └──────────────────┘    └──────────────────┘    └──────────────────┘
 ```
 
@@ -112,14 +134,36 @@ icon** — no remove/re-add.
   the `UWorldObserver` (MutationObserver wrapper) and broadcasts question /
   explanation events as DOM changes settle. It also handles `panel:requestParse`
   pull requests from the side panel.
-- **Background SW** (`entrypoints/background.ts`) is mostly a thin shim: opens
-  the side panel via `chrome.sidePanel`, wires `chrome.commands` keyboard
-  shortcuts, forwards them to the panel as runtime messages.
-- **Side panel** (`entrypoints/sidepanel/App.tsx` + `src/panel/*`) is where all
-  the work happens — UI, LLM streaming, settings, history.
+- **Background SW** (`entrypoints/background.ts`) is a thin shim: opens the
+  side panel via `chrome.sidePanel`, wires the single `toggle-panel` keyboard
+  command (`Cmd/Ctrl+Shift+U`). No other commands are bound.
+- **Side panel** (`entrypoints/sidepanel/App.tsx` + `src/panel/*`) is where
+  all the user-facing work happens — summary, chat, log card, settings,
+  history.
 - **Messaging** (`src/messaging/*`) is a small typed wrapper over
   `browser.runtime.sendMessage` / `onMessage`. Use the typed `RuntimeMessage`
   union; never send untyped messages.
+
+---
+
+## Panel surfaces (what the student actually sees)
+
+| Surface | What |
+|---|---|
+| Header                  | Brand + a `Streak` pill showing current correct streak, total seen, and accuracy %. |
+| Parser-health banner    | Renders only when `selectorHealth()` fails — names the missing selectors so it's obvious which `selectors.ts` entry to fix. |
+| StepBuddy banner        | "Logging to StepBuddy…" / "StepBuddy: <error>" pulled from the `stepbuddy` slice. |
+| `LogCard`               | The headline action whenever a question is graded. **Wrong** → opens automatically with `knowledge` pre-selected as miss type. **Right** → collapsed to a single "Log learning" button; click expands with `pure_learning` pre-selected. Both flow through `logToStepBuddy`. Stays on top so it can't be missed. |
+| `SummaryControls`       | One button — generates / re-generates the intense blaze-through summary. |
+| `QuestionView`          | Raw stem by default; once `intenseSummary` has any text, the view flips to "Summary" and stays there through grading. |
+| `ChatBox`               | Auto-prefixed with stem + choices + (post-grade) explanation. Streams. |
+| `SettingsPanel`         | OpenRouter key, StepBuddy email + password + sign-in, and a "Recent" list pulled from Dexie. Shows the pinned model id read-only. **No model picker.** |
+
+There is no AnswerList (the student clicks the choice on the UWorld page),
+no Celebration confetti, no ObjectiveData panel, no separate ReflectionForm
+— those v0 surfaces were folded into LogCard or removed outright.
+
+---
 
 ## Key invariants — break these and things break in subtle ways
 
@@ -143,75 +187,103 @@ icon** — no remove/re-add.
 - **Parse only emits if the result is "complete".** `parseQuestion` returns
   `null` if there are <2 choices or every choice has empty text. The
   `MutationObserver` will retry on the next tick. This avoids broadcasting a
-  half-rendered skeleton parse that gets dedup-locked by the hash check.
-- **`stripStemNoise()` cleans the stem.** It's the regex blacklist for
-  UWorld UI artifacts: "Mark Question", "Item: 1 of 28", "Question Id: …",
+  half-rendered skeleton parse that gets dedup-locked.
+- **`stripStemNoise()` cleans the stem.** Regex blacklist for UWorld UI
+  artifacts: "Mark Question", "Item: 1 of 28", "Question Id: …",
   "Time Spent", "Answered (in)?correctly", "Block Time Elapsed: …", etc.
 - **`stripExplanationNoise()` additionally cuts the trailing references /
   Medical Library / Copyright block.**
 - **Exhibits are bare `<a>exhibit</a>` anchors inside `#questionText`** —
   Angular click handlers, no `href`, no class. `textContent` flattens them
-  to a plain word so the user (especially in intense mode) blows right past
-  them. `extractExhibits()` collects anchor labels from the stem container,
+  to a plain word so a student blowing through questions will miss them.
+  `extractExhibits()` collects anchor labels from the stem container,
   skipping anchors inside the choice list and the `NON_EXHIBIT_ANCHOR`
   toolbar denylist (Mark Question / Lab Values / Tutorial / nav buttons —
   these only leak in via the rare choice-anchored fallback stem path).
-  Verified against the captured `.mhtml`. Result lands in
-  `ParsedQuestion.exhibits` and the panel renders a can't-miss flag.
-
-### Labs (`src/uworld/labs.ts`)
-
-- **`REF_RANGES` is the OFFICIAL USMLE/UWorld lab sheet, transcribed exactly**
-  from the user's reference screenshots. Do NOT invent or "round" bounds.
-  Only labs on the sheet are flagged; everything else the student reads off
-  the screen ("parse only these values"). Each entry carries a `reference`
-  string shown verbatim in the Objective Data panel.
-- **Sex-varying labs use the UNION (broadest) range** for the high/low test
-  (we don't know patient sex from a bare token) and keep the per-sex split
-  in the `reference` string. False negatives > false positives here.
-- **Vitals (BP/pulse/respirations/temp/SpO2) are NOT on the sheet** but are
-  kept as objective data with standard physiologic cutoffs. Temperature is
-  still always normalized to Fahrenheit — do not regress the C→F invariant.
-- **Lipids/troponin/A1c use an open low bound (`-Infinity`)** — only the
-  high direction is pathologic. HDL is the exception (low HDL is the
-  finding), so it keeps a real low bound.
+  Verified against a captured `.mhtml`. Result lands in
+  `ParsedQuestion.exhibits` — the field is populated but currently has no
+  UI surface; rendering a flag is a one-liner in `QuestionView` when you
+  want it back.
+- **Post-grade markers are icon-based, not class-based.** Correct =
+  `td.left-td i.fa-check`, wrong pick = `td.left-td i.fa-times`, user pick =
+  `mat-radio-button.mat-radio-checked`. `[class*="correct"]` matches never
+  hit on the real DOM — that was a v0 bug.
+- **`extractStandards()` reads UWorld's `.standards` block** at the bottom of
+  the explanation (post-grade only) and returns `{ subject, system, topic }`.
+  Keyed by `.standard-header` label (not column index), so a UWorld
+  reshuffle won't break it. `system` is what `mapUworldSystem()` turns into
+  a StepBuddy SystemTag — that mapping is the *whole reason* we no longer
+  need an LLM to guess the system.
 
 ### Observer (`src/uworld/observer.ts`)
 
+- **Identity is QID-first, hash-fallback.** Submitting an answer re-renders
+  the page (badges, "Correct answer", explanation panel) and shifts the
+  stem's `textContent` slightly, flipping the content hash. That used to
+  fire a bogus second `onQuestion` → `setQuestion()` → the generated
+  summary got wiped. Fix: treat a parse as the **same** question if
+  `questionId` matches the prior id (preferred), or — only when no id is
+  available — if the content hash matches. On a same-question scan we
+  still refresh `currentQuestion` so explanation parsing sees the
+  post-grade markers.
 - `refresh()` MUST NOT broadcast. It returns the parsed payload directly. If
   it broadcasts, the side panel re-receives `question:loaded`, calls
-  `requestParse` again, which calls `refresh()` again, → infinite loop. This
-  was a real bug. The only place `onQuestion` fires is inside `scan()` when
-  the content hash actually changed.
+  `requestParse` again, which calls `refresh()` again, → infinite loop. The
+  only place `onQuestion` fires is inside `scan()` when the identity check
+  above says "different question".
 - The MutationObserver is on `document.body` with `childList: true,
   subtree: true, characterData: true`. Debounced 200ms.
-- Dedup is by `hashStem(stem)` — a content hash, not a URL or counter. This
-  survives UWorld's SPA navigation between questions.
+
+### Labs (`src/uworld/labs.ts`) — STATIC DATA ONLY
+
+- **There is no runtime extractor anymore.** v0 had `extractLabs()` that
+  regex-scanned the stem, converted Celsius → Fahrenheit, and surfaced
+  abnormals in an `ObjectiveData` panel. The extractor and the panel were
+  both removed — too many false positives / negatives on a parser this
+  unconstrained, and the abnormals it flagged didn't change what the
+  student did. **Do not "restore" them without an explicit ask.**
+- **What's left is `LAB_REFERENCES`** — the OFFICIAL USMLE/UWorld lab sheet
+  transcribed exactly from the user's reference screenshots, kept as static
+  data because the table itself is hard-won and may be useful later as a
+  lookup surface (e.g. "what's the official reference range for ALT?"). It
+  is **not imported anywhere right now**.
+- **The intense prompt still tells the LLM to use Fahrenheit and skip units**
+  (see `prompts.ts:intensePrompt`). That used to be belt-and-suspenders
+  alongside parse-time conversion; now the prompt is the only guarantee. If
+  the LLM regresses on units / Celsius, tighten the prompt — don't add a
+  conversion pass back to `parser.ts`.
 
 ### Audio/voice — REMOVED
 
-There is no TTS / read-aloud / audio path anymore. `src/tts/*`, the speed
-slider, voice picker, `autoReadOnQuestion`, the `read-question` keyboard
-command, and the `tts:*` / `shortcut:read` messages were all deleted. Do not
-re-introduce a "read it aloud" feature without an explicit request — it was
-removed as unvetted code. `loadSettings()`'s `migrate()` strips any stale
-`tts*` / `autoReadOnQuestion` keys still sitting in `chrome.storage.local`.
+There is no TTS / read-aloud / audio path. No speed slider, no voice picker,
+no `autoReadOnQuestion`, no `read-question` keyboard command, no
+`tts:*` / `shortcut:read` messages. Do not re-introduce a "read it aloud"
+feature without an explicit request. `loadSettings()`'s `migrate()` strips
+stale `tts*` / `autoReadOnQuestion` keys still sitting in
+`chrome.storage.local`. `canvas-confetti` is still in `package.json` from
+the removed `Celebration` component — harmless dead dependency; leave it
+unless you're doing a dependency sweep.
 
 ### LLM (`src/llm/*`)
 
 - **OpenRouter, OpenAI-compatible.** `streamChat()` in `src/llm/client.ts`
-  uses fetch + SSE parsing. Headers `HTTP-Referer` and `X-Title` are
-  required by OpenRouter for ranking.
-- **API keys live in `chrome.storage.local`.** Never inject them into the
-  page. All LLM calls originate from the side panel (privileged context).
-- **Models are discovered, not hardcoded.** `src/llm/models.ts:fetchModels()`
-  hits `GET /models?output_modalities=all` and keeps only text-output (chat)
-  models — `ModelCatalog` is `{ llm, fetchedAt }`, no TTS bucket. Cached 24h in
-  `chrome.storage.local` under key `ubuddy.models`.
-- **DEFAULT_SETTINGS.llmModel is an EMPTY string.** The UI forces
-  the user to pick from the live catalog. This is intentional — hardcoded
-  slugs go stale (`groq/llama-3.3-70b-versatile` → wrong, real OpenRouter
-  slug is `meta-llama/llama-3.3-70b-instruct`).
+  uses `fetch` + SSE parsing. Headers `HTTP-Referer` and `X-Title` are
+  required by OpenRouter for ranking. `completeChat()` is a thin
+  `streamChat` → accumulated string wrapper for non-streaming callers.
+- **The model is pinned in `src/llm/model.ts`** — one constant (`MODEL_ID`,
+  `MODEL_LABEL`), used everywhere (summary, chat, auto-draft). Currently
+  `google/gemini-3-flash-preview` (label "Gemini 3 Flash Preview"). Pinned
+  on purpose: UWorld's blaze-through workflow has zero tolerance for a
+  stale dropdown, and picking the wrong slug silently breaks every LLM
+  call. To change models, edit `model.ts` — that's the whole change, no
+  settings migration, no UI work. Verified live against
+  `GET https://openrouter.ai/api/v1/models`.
+- **No catalog discovery, no cache, no picker.** The old `src/llm/models.ts`
+  (`fetchModels`, `ModelCatalog`, `ubuddy.models` storage key) is gone.
+  Settings reads `MODEL_LABEL` for display only.
+- **API key lives in `chrome.storage.local`** under `ubuddy.settings`. Never
+  injected into the page. All LLM calls originate from the side panel
+  (privileged context).
 
 ### Intense mode (`src/llm/prompts.ts:intensePrompt`)
 
@@ -222,93 +294,124 @@ Read carefully before changing it.
 - **Restate the actual question verbatim at the end.** We pre-extract the
   last interrogative sentence from the stem (`extractQuestionLine`) and pass
   it as a separate field with explicit instruction to restate it.
-- **No units, ever.** `summarizeLabsForLLM()` strips units before the LLM
-  sees them, and the prompt forbids the model from re-introducing them. BP
-  "80/50" is rendered "80 over 50" preemptively.
-- **All temps in Fahrenheit.** `extractLabs()` detects Celsius and converts
-  at parse time. The LLM never sees a Celsius value.
+- **No units, ever.** The prompt forbids the model from emitting them. BP
+  rendered as "80 over 50" preemptively in the example.
+- **All temps in Fahrenheit** — enforced by prompt only (see labs note).
 - **`sanitizeStemForIntense()` cuts the stem at any spoiler marker** —
   `Explanation:`, `Educational objective:`, `Correct answer`, or
   `This patient (most likely) has` — before showing the LLM. Even if the
   parser leaks explanation, the prompt builder slices it off.
-- **Markdown is forbidden in the prompt with a worked example** of the exact
-  expected tone. Cheap models imitate examples even when they ignore rules.
+- **Markdown is forbidden with a worked example** of the exact expected
+  tone. Cheap models imitate examples even when they ignore rules.
 
-### StepBuddy mistake-log (`src/stepbuddy/*`)
+### StepBuddy log card + RPC (`src/stepbuddy/*` + `src/panel/LogCard.tsx`)
 
-Pushes a **wrong** answer to the user's StepBuddy via the Supabase
-`log_mistake` Postgres RPC **only on an explicit button click** — there is NO
-auto-logger. There is NO custom server — calls go straight to Supabase Auth +
-REST.
+The headline write path. Pushes every graded question — wrong **or** right —
+to StepBuddy via the Supabase `log_mistake` Postgres RPC on an explicit
+button click. There is NO custom server — calls go straight to Supabase
+Auth + REST.
 
+- **One unified entry surface: `LogCard.tsx`.** Wrong answers open the card
+  automatically with `knowledge` as the default miss type; right answers
+  collapse to "Log learning" and expand on click with `pure_learning`
+  pre-selected. Same form, same submit path. There is NO separate
+  ReflectionForm anymore.
+- **The rule (takeaway) is the student's words, every time.** The textarea
+  starts empty. Clicking **Auto-draft** streams a 2–4 sentence draft from
+  the LLM via `draftLearningPrompt`; the student then edits before saving.
+  We deliberately don't auto-populate on render — it would burn tokens
+  every question and bias the student away from writing their own.
+- **`system_tag` is DETERMINISTIC, not LLM-classified.** `mapUworldSystem()`
+  in `classify.ts` is a fixed lookup table from UWorld's `.standards`
+  "System" label onto StepBuddy's `SystemTag`. Comparison is
+  lowercased + whitespace-collapsed. Unknown / missing system →
+  `Miscellaneous (MISC)`. This replaced the v0 LLM-classify-with-fallback
+  approach, which was slow and occasionally wrong on JSON shape; now
+  there is no LLM call at log time at all.
+- **`miss_type` is chosen by the student** in the dropdown. Wrong-answer
+  picker is the 8 wrong-flavored types; right-answer picker leads with
+  `pure_learning`. UBuddy adds `pure_learning` to the enum that StepBuddy
+  expects — keep both ends in sync if the enum ever moves.
 - **No `@supabase/supabase-js` dependency.** `client.ts` is raw `fetch`. The
   SDK's GoTrue client wants `localStorage` + a `setInterval` auto-refresh,
-  neither reliable in MV3. We persist `{accessToken, refreshToken, expiresAt}`
-  in `chrome.storage.local` under `ubuddy.stepbuddy.session` and refresh
-  **lazily, on demand** (`ensureAccessToken` checks expiry right before each
-  call) — never on a timer, because the panel/SW can be torn down anytime.
-- **The publishable key is public by design** (ships in StepBuddy's web
-  client) so it's hardcoded in `client.ts`. The user's email+password live in
-  `AppSettings` (same posture as `openrouterApiKey`) so the session can be
-  silently re-minted if the refresh token is ever rejected.
-- **The RPC has NO upsert — every call inserts a row.** Dedup is mandatory and
-  lives ONLY in `log.ts:logWrongAnswer`: guarded by the persisted
-  `QuestionRecord.stepbuddyMistakeId` (survives SPA re-emit / panel reopen)
-  PLUS an in-memory in-flight `Set` (covers the gap before the id is
-  persisted). Never call `logMistake` directly from a component.
+  neither reliable in MV3. We persist `{accessToken, refreshToken,
+  expiresAt, email}` in `chrome.storage.local` under
+  `ubuddy.stepbuddy.session` and refresh **lazily, on demand** —
+  `ensureAccessToken` checks expiry right before each call, and a 401 on
+  the actual RPC triggers exactly one forced refresh + retry (clock-skew
+  defense). Concurrent refreshes are coalesced through a module-level
+  `refreshing: Promise<string>` so several quick logs don't stampede.
+- **The publishable key is public by design** (already ships in StepBuddy's
+  web client) so it's hardcoded in `client.ts`. The user's email + password
+  live in `AppSettings` so the session can be silently re-minted if the
+  refresh token is ever rejected.
+- **The RPC has NO upsert — every call inserts a row.** Dedup is mandatory
+  and lives ONLY in `log.ts:logToStepBuddy`: guarded by the persisted
+  `QuestionRecord.stepbuddyMistakeId` (survives SPA re-emit / panel
+  reopen) PLUS an in-memory in-flight `Set` (covers the gap before the id
+  is persisted). Never call `logMistake` directly from a component.
 - **`stepbuddyMistakeId` is NOT a Dexie index** — it's a plain field, so
   adding it needed no schema version bump. Don't add it to `.stores()`.
-- **UWorld exposes no subject taxonomy in anything we parse.** So there's
-  nothing to "map" — `classify.ts` asks the configured OpenRouter LLM to read
-  the official explanation and emit strict JSON `{system_tag, miss_type,
-  rule}`. Every field is hard-coerced against `SYSTEM_TAGS` / `MISS_TYPES`
-  (fallback `Misc` / `knowledge`) before send; the RPC validates too but a bad
-  value there costs a round-trip + thrown error.
-- **One trigger, one dedup.** The ONLY path to StepBuddy is ReflectionForm's
-  explicit "Save & log to StepBuddy" button (and its on-error retry). The
-  student's `keyLearning` is the rule; the LLM (`classify.ts`) only supplies
-  `system_tag` and a *fallback* rule when they leave the textarea blank. There
-  is deliberately no auto-log on `explanation:shown` — that race made the LLM
-  guess almost always win on a write-once RPC, burying the student's words.
-  Single explicit write = their words always land, no update RPC needed. Dedup
-  still matters: double-click, retry-after-partial-success, and SPA re-emit /
-  panel reopen are all guarded in `log.ts` (persisted id + in-flight set).
-- **No-LLM fallback:** with no chat model selected, `classify.ts` can't run, so
-  the student's `keyLearning` IS the rule (`whyWrong` → `miss_type` via
-  `mapWhyWrong`, system = `Misc`). If they also leave `keyLearning` blank,
-  `logWrongAnswer` returns an error (nothing defensible to send) and the
-  button surfaces it — local reflection is still saved either way.
 - **`SYSTEM_TAGS` / `MISS_TYPES` / `SOURCES` mirror StepBuddy's
-  `lib/constants.ts`.** If StepBuddy changes those, update `client.ts` AND the
-  `classify.ts` prompt in lockstep — the RPC migration moves with them.
-- **Status is one Zustand slice** (`stepbuddy: {status, message}`), reset by
-  `setQuestion()` like the other per-question scratch state. App.tsx renders
-  it as a banner.
+  `lib/constants.ts`.** If StepBuddy changes those, update `client.ts` AND
+  the `UWORLD_SYSTEM_MAP` in `classify.ts` in lockstep — the RPC migration
+  moves with them.
+- **No-LLM fallback path:** with no OpenRouter key, auto-draft is disabled
+  but logging still works — the student writes the rule themselves. With
+  an empty rule, `logToStepBuddy` returns a friendly error and the card
+  surfaces it instead of sending an empty row.
+- **Status is one Zustand slice** (`stepbuddy: {status, message}`), reset
+  by `setQuestion()` like the other per-question scratch state. App.tsx
+  renders it as a banner; LogCard reads it for the "already logged"
+  short-circuit.
 
 ### Question display
 
-There is no `Verbosity` type and no read-aloud. `QuestionView` shows the raw
-stem by default; pressing **Summarize** (`SummaryControls`) streams the tight
-LLM "intense" summary into `intenseSummary`, and the view switches to that.
-The summary is text only and survives answer submission.
+`QuestionView` shows the raw stem by default; pressing **Summarize**
+(`SummaryControls`) streams the intense summary into `intenseSummary`, and
+the view switches to that. Text-only, no audio. The summary survives
+answer submission because observer identity is QID-based — the post-grade
+re-render doesn't fire `setQuestion()` and therefore doesn't wipe the
+slice.
+
+---
 
 ## State
 
-- **Settings**: `chrome.storage.local` under `ubuddy.settings`. See
-  `src/types/index.ts:DEFAULT_SETTINGS`. Watched via
+- **Settings**: `chrome.storage.local` under `ubuddy.settings`.
+  `AppSettings` is now just three fields:
+  ```ts
+  { openrouterApiKey, stepbuddyEmail, stepbuddyPassword }
+  ```
+  See `src/types/index.ts:DEFAULT_SETTINGS`. Watched via
   `src/storage/settings.ts:watchSettings()` so cross-tab edits propagate.
+  `migrate()` strips dropped keys: `tts*`, `autoReadOnQuestion`,
+  `llmModel`, `resetChatOnNewQuestion`, `stepbuddyEnabled`.
+- **StepBuddy session**: `chrome.storage.local` under
+  `ubuddy.stepbuddy.session` (see the StepBuddy section above for the
+  shape and refresh model).
 - **Question history + reflections**: IndexedDB via Dexie, schema in
-  `src/storage/db.ts`. One table: `questions`. `streakStats()` derives
-  `{ total, correct, current }` for the header pill.
+  `src/storage/db.ts`. One table: `questions`. `QuestionRecord` now
+  carries the student's `rule` (the takeaway sent to StepBuddy) and
+  `stepbuddyMistakeId` (the dedup guard). `streakStats()` derives
+  `{ total, correct, current }` for the header pill. The schema string
+  still lists a `whyWrong` index from v0 — harmless (the field no longer
+  exists in `QuestionRecord`), but don't rely on it.
 - **In-memory app state**: Zustand in `src/state/store.ts`. `setQuestion()`
-  resets `selectedLetter`, `explanation`, `intenseSummary`, `reflection`,
-  and (if `resetChatOnNewQuestion`) `chat` — by design, opening a new
-  question wipes per-question scratch state.
+  resets `selectedLetter`, `explanation`, `intenseSummary`, `logForm`,
+  `stepbuddy`, and `chat` — by design, opening a new question wipes
+  per-question scratch state. `LogFormState` carries
+  `{ open, rule, missType, drafting }`.
+
+---
 
 ## Logging conventions
 
 Every log line is prefixed with the subsystem: `[ubuddy:content]`,
-`[ubuddy:bg]`, `[ubuddy:panel]`, `[ubuddy:llm]`, `[ubuddy:models]`.
+`[ubuddy:bg]`, `[ubuddy:panel]`, `[ubuddy:llm]`, `[ubuddy:stepbuddy]`,
+`[ubuddy:chat]`.
+
+---
 
 ## Theme
 
@@ -324,35 +427,46 @@ CSS vars (verified by inspecting an exported `.mhtml`):
 
 Don't introduce ad-hoc colors. Reuse these tokens.
 
+---
+
 ## Things to watch out for
 
 - **WXT auto-imports `browser` and `defineBackground` / `defineContentScript`.**
   Don't import them manually.
 - **`chrome.sidePanel` is not in the WebExtensions polyfill types.** Either
-  declare it locally (see `entrypoints/background.ts`) or `(globalThis as any).chrome`.
+  declare it locally (see `entrypoints/background.ts`) or
+  `(globalThis as any).chrome`.
 - **Stale settings in `chrome.storage.local` survive code changes.** When a
-  default value changes (e.g., the LLM model slug), users with prior saves
-  still have the old value. `loadSettings()` has a `migrate()` step for known
-  removals (currently strips the dropped `tts*` / `autoReadOnQuestion` keys);
-  add to it when a field disappears or its semantics change.
+  field disappears (e.g., `llmModel`, the `tts*` keys), `loadSettings()`'s
+  `migrate()` strips them. Add to that list whenever a field is removed or
+  its semantics change.
 - **OpenRouter SSE error frames.** If the model errors mid-stream, OpenRouter
-  sends an SSE event with `{ error: { message: ... } }`. `streamChat` checks
-  for `json.error` per frame and reports — make sure new SSE consumers do too.
-- **`chrome.storage.local` size limit is 5MB by default.** Models catalog can
-  be ~2MB. We're fine but don't pile more in.
-- **StepBuddy email+password are stored plaintext in `ubuddy.settings`** and
-  the live session token under `ubuddy.stepbuddy.session`. Same posture as the
-  OpenRouter key (personal-use extension, never injected into the page). If you
-  ever add cloud sync of settings, exclude these keys.
+  sends an SSE event with `{ error: { message: ... } }`. `streamChat`
+  checks for `json.error` per frame and reports — make sure new SSE
+  consumers do too.
+- **`chrome.storage.local` size limit is 5MB by default.** We don't store
+  the models catalog anymore, so we're nowhere near it.
+- **StepBuddy email + password are stored plaintext in `ubuddy.settings`**
+  and the live session token under `ubuddy.stepbuddy.session`. Same
+  posture as the OpenRouter key (personal-use extension, never injected
+  into the page). If you ever add cloud sync of settings, exclude these
+  keys.
 - **StepBuddy fetches go from the side panel, not a content script.** The
   panel is a privileged extension page with the Supabase host in
   `host_permissions`, so it's not CORS-blocked (content scripts would be).
+- **The model is pinned at code level.** Don't re-introduce a settings
+  field for it just because adding a picker feels like the obvious move —
+  the whole point of the pin is that the student can't accidentally pick
+  a broken slug. If a new model is better, edit `src/llm/model.ts` and
+  ship.
+
+---
 
 ## File tour
 
 ```
 entrypoints/
-  background.ts          # tiny shim: panel open, keyboard commands
+  background.ts          # tiny shim: panel open, Cmd+Shift+U toggle command
   content.ts             # MutationObserver host + message handler
   sidepanel/
     index.html
@@ -361,73 +475,121 @@ entrypoints/
 
 src/
   uworld/
-    selectors.ts         # SINGLE source of truth — DOM selectors
-    parser.ts            # parseQuestion, parseExplanation, forwardClick, selectorHealth
-    observer.ts          # UWorldObserver — MutationObserver wrapper
-    labs.ts              # regex extractor + OFFICIAL USMLE reference table + C→F conversion
+    selectors.ts         # SINGLE source of truth — DOM selectors + queryFirst/queryAll
+    parser.ts            # parseQuestion, parseExplanation, extractStandards,
+                         #   extractExhibits, forwardClick, selectorHealth
+    observer.ts          # UWorldObserver — MutationObserver wrapper, QID-keyed identity
+    labs.ts              # STATIC DATA ONLY — LAB_REFERENCES table, no extractor
   panel/
-    QuestionView.tsx     # stem display only (raw stem or intense summary)
-    ObjectiveData.tsx    # exhibit/image flag + parsed vitals & labs w/ ref ranges
-    AnswerList.tsx       # variable-count answer buttons
-    SummaryControls.tsx  # single "Summarize" button (text only, no audio)
+    QuestionView.tsx     # raw stem ↔ intense summary
+    SummaryControls.tsx  # single "Summarize" button (text only)
+    LogCard.tsx          # inline mistake / learning logger — the headline UI
     ChatBox.tsx          # streaming LLM chat with auto-context
-    ReflectionForm.tsx   # wrong-answer reflection (dropdown + textarea)
-    Celebration.tsx      # canvas-confetti + streak display
-    SettingsPanel.tsx    # API key, chat-model picker, StepBuddy, history
+    SettingsPanel.tsx    # API key, StepBuddy creds + sign-in, recent history
   llm/
-    client.ts            # OpenRouter streamChat (SSE)
-    models.ts            # GET /models discovery + cache
-    prompts.ts           # intensePrompt, chatSystemPrompt, sanitizeStemForIntense
+    client.ts            # streamChat (SSE) + completeChat wrapper
+    model.ts             # MODEL_ID + MODEL_LABEL — the single pinned model
+    prompts.ts           # intensePrompt, chatSystemPrompt, draftLearningPrompt,
+                         #   sanitizeStemForIntense, extractQuestionLine
   stepbuddy/
     client.ts            # Supabase auth (raw fetch) + log_mistake RPC + enum lists
-    classify.ts          # LLM → {system_tag, miss_type, rule}; whyWrong→miss_type map
-    log.ts               # logWrongAnswer — the ONLY entry point; owns dedup
+    classify.ts          # mapUworldSystem (deterministic lookup) + draftLearningRule
+    log.ts               # logToStepBuddy — the ONLY entry point; owns dedup
   state/
-    store.ts             # Zustand
+    store.ts             # Zustand (settings, question, explanation, intenseSummary,
+                         #   logForm, chat, streak, stepbuddy)
   storage/
-    db.ts                # Dexie schema (questions table)
-    settings.ts          # chrome.storage wrapper
+    db.ts                # Dexie schema (questions table) + streakStats
+    settings.ts          # chrome.storage wrapper + migrate()
   messaging/
     types.ts             # discriminated-union RuntimeMessage
     bus.ts               # send / sendToTab / on / onAny helpers
   styles/
     panel.css            # CSS variables + layout
   types/
-    index.ts             # AppSettings, ParsedQuestion, AnswerChoice, etc.
+    index.ts             # AppSettings, ParsedQuestion, ParsedExplanation,
+                         #   QuestionRecord, ChatMessage
 ```
+
+---
+
+## Out of scope / anti-goals
+
+Intentionally not built. **Don't add these on your own initiative — ask
+Rahul first**, and prefer "no" by default; the point of UBuddy is to stay
+tiny:
+
+- **A model picker / settings field for the LLM.** Pinned in `model.ts` on
+  purpose. If a new model is better, edit the constant.
+- **OpenRouter `/models` discovery / cache.** Removed deliberately along
+  with the picker; the catalog UI was dead weight.
+- **An in-panel answer selector.** The student picks on UWorld's page. The
+  observer reads back the pick from `mat-radio-checked`.
+- **Audio / TTS / read-aloud / "verbatim" mode.** All of v0's audio path is
+  gone; do not reintroduce. See "Audio/voice — REMOVED".
+- **A custom server, REST API, or background worker beyond the MV3 SW.**
+  Everything talks straight to OpenRouter or to Supabase from the side
+  panel.
+- **An auto-logger that pushes to StepBuddy on `explanation:shown`.**
+  Deliberately user-triggered: the LogCard button is the only path. An
+  auto-push race was tried earlier and buried the student's own words.
+- **Per-extension auth / accounts / cross-device sync.** Single user,
+  local IndexedDB + `chrome.storage.local`. If sync ever becomes a goal,
+  exclude `stepbuddyPassword` and the OpenRouter key from anything that
+  leaves the device.
+- **Cross-browser support today.** Chromium-only; Firefox would need
+  `sidebarAction` and a browser-polyfill pass.
+
+---
 
 ## Open issues / future work
 
-These are real but deliberately not addressed yet:
+Real but deliberately not addressed:
 
-- **No tests.** Manual fixture HTML in `/dev` is a future thing; the parser
-  badly wants snapshot tests against the captured `.mhtml`.
-- **No spaced repetition / review surface.** Reflections persist but there's
-  no "show me my recent misses" beyond the small history list in Settings.
-- **No keyboard shortcut to pick an answer.** Number keys 1-5 would be ideal
-  for blazing-through workflow.
-- **Cross-browser.** Currently Chromium-only (uses `chrome.sidePanel`).
-  Firefox port would need `sidebarAction` + the WebExtensions polyfill.
+- **No tests.** Manual fixture HTML in `/dev` is a future thing; the
+  parser badly wants snapshot tests against the captured `.mhtml`.
+- **No spaced repetition / review surface.** StepBuddy owns that (and
+  Anki, via StepBuddy's cloze export). UBuddy never schedules.
+- **No keyboard shortcut to pick an answer.** Number keys 1-5 would be
+  ideal for blazing-through workflow.
+- **`ParsedQuestion.exhibits` has no UI surface.** The field is populated;
+  rendering a flag is a one-liner in `QuestionView`.
+- **README.md is stale** (still describes the removed TTS pipeline /
+  model picker). Update before any redistribution scenario; not urgent
+  for personal use.
+- **`canvas-confetti` is an unused dependency** left from the removed
+  Celebration component. Safe to drop on the next dep sweep.
+
+---
 
 ## When something feels off
 
-1. **Build fails:** run `bun run compile` first — it isolates type errors from
-   WXT bundling. Prod-only breakage that `bun run dev` swallows shows up in
-   `bun run build`.
+1. **Build fails:** run `bun run compile` first — it isolates type errors
+   from WXT bundling. Prod-only breakage that `bun run dev` swallows shows
+   up in `bun run build`.
 2. **Extension stale / not loading:** confirm `dist/chrome-mv3` was rebuilt
-   *on `main`* (working-agreement step 2), then refresh icon. A stale `dist/`
-   left by another branch is the usual culprit — not a code bug.
+   *on `main`* (working-agreement step 2), then refresh icon. A stale
+   `dist/` left by another branch is the usual culprit — not a code bug.
 3. **Parser stopped matching:** UWorld changed their DOM. Don't guess —
-   `src/uworld/selectors.ts` is the only file to touch, and you need a real
-   sample (see below). The `.mhtml` capture is ground truth.
-4. **Settings wrong after a code change:** stale `chrome.storage.local`
+   `src/uworld/selectors.ts` is the only file to touch, and you need a
+   real sample (see below). The `.mhtml` capture is ground truth.
+4. **Summary got wiped on submit:** observer identity logic — confirm
+   `questionId` is being parsed (look at
+   `[ubuddy:content] question:loaded <hash> N choices` in the console).
+   If `questionId` is empty, the hash fallback is being used and the
+   post-grade re-render flipped it.
+5. **Settings wrong after a code change:** stale `chrome.storage.local`
    survives reloads — check `loadSettings()`'s `migrate()` step.
-5. **LLM 4xx:** an OpenRouter quirk — the OpenAPI spec at
+6. **LLM 4xx:** an OpenRouter quirk — the OpenAPI spec at
    `/Users/radev/Downloads/openapi.yaml` is authoritative; also check SSE
-   error frames (`{ error: { message } }`).
-6. **StepBuddy log fails:** auth/session. `src/stepbuddy/log.ts` owns the only
-   path and all dedup; the RPC contract mirrors
+   error frames (`{ error: { message } }`). If the request 404s on the
+   model id, the pin in `model.ts` has gone stale — refresh it against
+   `GET /models`.
+7. **StepBuddy log fails:** auth / session. `src/stepbuddy/log.ts` owns
+   the only path and all dedup; the RPC contract mirrors
    `stepbuddy-v2/lib/constants.ts` — they move in lockstep.
+
+---
 
 ## Asking the user vs. assuming
 

@@ -19,11 +19,5 @@ export default defineConfig({
     side_panel: {
       default_path: 'sidepanel.html',
     },
-    commands: {
-      'toggle-panel': {
-        suggested_key: { default: 'Ctrl+Shift+U', mac: 'Command+Shift+U' },
-        description: 'Toggle UBuddy side panel',
-      },
-    },
   },
 });

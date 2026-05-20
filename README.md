@@ -42,11 +42,13 @@ git clone https://github.com/rdevathu/ubuddy.git
    cloned/downloaded. (Not the top-level `ubuddy` folder — go one level
    deeper into `dist/chrome-mv3`.)
 5. UBuddy should now appear in your extensions list.
-6. Click the puzzle-piece icon in Chrome's toolbar and **pin** UBuddy so its
-   icon stays visible.
+6. **Pin UBuddy to your toolbar.** Click the puzzle-piece icon in Chrome's
+   toolbar, find UBuddy in the list, and click the pin icon next to it so
+   UBuddy's icon stays visible. This is how you'll open the side panel — so
+   it needs to be pinned.
 
-That's it. Open a UWorld question, click the UBuddy icon (or press
-`Cmd+Shift+U` on Mac / `Ctrl+Shift+U` on Windows), and the side panel opens.
+That's it. Open a UWorld question, click the pinned UBuddy icon in the
+toolbar, and the side panel opens.
 
 ## First-time setup
 

@@ -29,7 +29,13 @@ import { draftLearningPrompt } from '../llm/prompts';
 import { useStore } from '../state/store';
 import { upsertQuestion } from '../storage/db';
 import { mapUworldSystem } from '../stepbuddy/classify';
-import { MISS_TYPES, MISS_TYPE_LABELS, type MissType } from '../stepbuddy/client';
+import {
+  MISS_TYPES,
+  MISS_TYPE_LABELS,
+  SYSTEM_TAGS,
+  type MissType,
+  type SystemTag,
+} from '../stepbuddy/client';
 import { logToStepBuddy } from '../stepbuddy/log';
 
 const WRONG_MISS_TYPES: MissType[] = [
@@ -68,6 +74,7 @@ export function LogCard() {
       open: !wasCorrect,
       missType: wasCorrect ? 'pure_learning' : 'knowledge',
       rule: '',
+      systemOverride: null,
       drafting: false,
     });
     setError(null);
@@ -78,6 +85,8 @@ export function LogCard() {
 
   const stepbuddyReady = !!settings.stepbuddyEmail && !!settings.stepbuddyPassword;
   const mappedSystem = mapUworldSystem(explanation.system);
+  const effectiveSystem: SystemTag = logForm.systemOverride ?? mappedSystem;
+  const isOverridden = logForm.systemOverride !== null && logForm.systemOverride !== mappedSystem;
   const alreadyLogged = stepbuddy.status === 'logged';
 
   const allowedMissTypes = wasCorrect
@@ -139,6 +148,7 @@ export function LogCard() {
         explanation,
         rule: logForm.rule,
         missType: logForm.missType,
+        systemOverride: logForm.systemOverride,
       });
       if (r.ok) {
         setStepbuddy({ status: 'logged', message: `${r.system} · ${MISS_TYPE_LABELS[r.miss]}` });
@@ -202,13 +212,54 @@ export function LogCard() {
         )}
       </div>
 
-      <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
-        Will log as{' '}
-        <strong style={{ color: 'var(--fg)' }}>{mappedSystem}</strong>
-        {explanation.system && explanation.system.toLowerCase() !== mappedSystem.toLowerCase() && (
-          <> <span style={{ opacity: 0.7 }}>(UWorld: {explanation.system})</span></>
-        )}
-      </div>
+      <label>
+        System
+        <select
+          value={effectiveSystem}
+          onChange={(e) => {
+            const picked = e.target.value as SystemTag;
+            setLogForm({ systemOverride: picked === mappedSystem ? null : picked });
+          }}
+          disabled={saving}
+        >
+          {SYSTEM_TAGS.map((s) => (
+            <option key={s} value={s}>
+              {s}
+              {s === mappedSystem ? ' (from UWorld)' : ''}
+            </option>
+          ))}
+        </select>
+        <div style={{ fontSize: 11, color: 'var(--fg-dim)', marginTop: 2 }}>
+          {isOverridden ? (
+            <>
+              Overriding UWorld’s{' '}
+              <strong style={{ color: 'var(--fg)' }}>{mappedSystem}</strong>
+              {explanation.system && (
+                <> <span style={{ opacity: 0.7 }}>(label: {explanation.system})</span></>
+              )}
+              {' · '}
+              <button
+                type="button"
+                className="btn--link"
+                onClick={() => setLogForm({ systemOverride: null })}
+                disabled={saving}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'var(--accent)',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                }}
+              >
+                reset
+              </button>
+            </>
+          ) : (
+            <>Auto-picked from UWorld’s System label.</>
+          )}
+        </div>
+      </label>
 
       <label>
         Miss type

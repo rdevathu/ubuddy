@@ -27,7 +27,7 @@ import { streamChat } from '../llm/client';
 import { MODEL_ID, MODEL_LABEL } from '../llm/model';
 import { draftLearningPrompt } from '../llm/prompts';
 import { useStore } from '../state/store';
-import { upsertQuestion } from '../storage/db';
+import { getQuestionByHash, upsertQuestion } from '../storage/db';
 import { mapUworldSystem } from '../stepbuddy/classify';
 import {
   MISS_TYPES,
@@ -68,16 +68,40 @@ export function LogCard() {
   // until the student clicks "Log learning". Default miss type follows the
   // outcome (`pure_learning` for right, `knowledge` for wrong) — they can
   // change it before logging.
+  //
+  // Re-visit case: if this question already has a persisted `stepbuddyMistakeId`
+  // in Dexie from an earlier panel session, restore the "logged" banner instead
+  // of re-opening the form. Without this lookup, navigating away and back to a
+  // graded question would re-show the empty log card as if nothing happened.
   useEffect(() => {
-    if (!explanation) return;
-    setLogForm({
-      open: !wasCorrect,
-      missType: wasCorrect ? 'pure_learning' : 'knowledge',
-      rule: '',
-      systemOverride: null,
-      drafting: false,
-    });
+    if (!explanation || !question) return;
+    let cancelled = false;
     setError(null);
+    (async () => {
+      const existing = await getQuestionByHash(question.questionHash);
+      if (cancelled) return;
+      if (existing?.stepbuddyMistakeId) {
+        setStepbuddy({ status: 'logged', message: 'already logged' });
+        setLogForm({
+          open: false,
+          missType: wasCorrect ? 'pure_learning' : 'knowledge',
+          rule: '',
+          systemOverride: null,
+          drafting: false,
+        });
+      } else {
+        setLogForm({
+          open: !wasCorrect,
+          missType: wasCorrect ? 'pure_learning' : 'knowledge',
+          rule: '',
+          systemOverride: null,
+          drafting: false,
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [explanation?.questionHash]);
 

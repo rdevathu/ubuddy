@@ -152,12 +152,14 @@ export function LogCard() {
       });
       if (r.ok) {
         setStepbuddy({ status: 'logged', message: `${r.system} · ${MISS_TYPE_LABELS[r.miss]}` });
+        setLogForm({ open: false });
       } else if ('skipped' in r && r.skipped) {
-        setStepbuddy(
-          r.reason === 'already logged'
-            ? { status: 'logged', message: 'already logged' }
-            : { status: 'idle' },
-        );
+        if (r.reason === 'already logged') {
+          setStepbuddy({ status: 'logged', message: 'already logged' });
+          setLogForm({ open: false });
+        } else {
+          setStepbuddy({ status: 'idle' });
+        }
       } else {
         setStepbuddy({ status: 'error', message: r.error });
         setError(r.error);

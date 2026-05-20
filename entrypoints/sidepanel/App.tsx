@@ -152,7 +152,10 @@ export function App() {
   return (
     <div className="app">
       <div className="app__header">
-        <div className="app__brand">UBuddy</div>
+        <div className="app__brand">
+          <img className="app__brand-logo" src="/icon/128.png" alt="" />
+          UBuddy
+        </div>
         <LoggedCount />
       </div>
       <div className="tabs">

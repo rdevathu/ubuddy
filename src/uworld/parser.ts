@@ -1,5 +1,4 @@
 import type { AnswerChoice, ParsedExplanation, ParsedQuestion } from '../types';
-import { extractLabs } from './labs';
 import { SELECTORS, queryAll, queryFirst } from './selectors';
 
 function hashStem(stem: string): string {
@@ -16,8 +15,7 @@ function clean(text: string | null | undefined): string {
 
 /**
  * Strip UWorld UI noise that ends up in raw textContent: "Mark Question"
- * checkbox label, item counter, ids, post-submit timing, status banners,
- * and the explanation footer artifacts.
+ * checkbox label, item counter, ids, post-submit timing, status banners.
  */
 function stripStemNoise(text: string): string {
   return text
@@ -36,16 +34,10 @@ function stripStemNoise(text: string): string {
 
 function stripExplanationNoise(text: string): string {
   return stripStemNoise(text)
-    // Drop the trailing metadata/references block that follows "Educational objective:".
     .replace(/(References?|Medical Library|Copyright\s+©\s+UWorld[^]*)$/i, '')
     .trim();
 }
 
-/**
- * Collect text from `root`, walking in document order, stopping when we hit
- * `marker`. Skips any subtree whose className mentions "explanation" so we
- * don't leak the right-side panel into the stem.
- */
 function collectTextBefore(root: Element, marker: Element): string {
   const parts: string[] = [];
   let stopped = false;
@@ -71,29 +63,13 @@ function collectTextBefore(root: Element, marker: Element): string {
   return parts.join(' ');
 }
 
-/**
- * Find the stem text.
- *
- * Strategy in order of preference:
- *   1. UWorld's well-known `#questionText` div (or class-based equivalents).
- *      This is the most reliable when present — it contains ONLY the stem,
- *      no toolbar text, no explanation.
- *   2. If that fails, anchor on the choice list and collect the text that
- *      appears before it in DOM order, scoped to a sensible ancestor.
- *
- * Returns null if neither path produces enough text — the MutationObserver
- * will retry on the next DOM tick, which handles the "panel opened before
- * Angular finished hydrating" case cleanly.
- */
 function findStem(): { container: Element; stemText: string } | null {
-  // Primary: UWorld's exact stem container.
   const direct = queryFirst(document, SELECTORS.questionContainer);
   if (direct) {
     const text = stripStemNoise(direct.textContent ?? '');
     if (text.length >= 30) return { container: direct, stemText: text };
   }
 
-  // Fallback: anchor on the choice list and walk back.
   const choices = queryFirst(document, SELECTORS.choiceList);
   if (!choices) return null;
 
@@ -123,7 +99,6 @@ function findChoiceItems(): Element[] {
     const items = queryAll(list, SELECTORS.choiceItem);
     if (items.length >= 2) return items;
   }
-  // fallback: top-level radios anywhere on the page
   return Array.from(document.querySelectorAll('input[type="radio"]')).map((r) => {
     const label = r.closest('label') || r.parentElement;
     return (label as Element) ?? r;
@@ -135,8 +110,6 @@ function letterFor(idx: number): string {
 }
 
 function extractChoiceText(item: Element): { letter: string; text: string; percentage?: number } {
-  // If the matched element is a bare <input type="radio"> or a wrapper that
-  // doesn't carry the label text, walk up to the closest ancestor that does.
   let probe: Element | null = item;
   let raw = clean(probe.textContent);
   let depth = 0;
@@ -145,7 +118,6 @@ function extractChoiceText(item: Element): { letter: string; text: string; perce
     raw = clean(probe.textContent);
     depth++;
   }
-  // common: "A.  Antiemetics and serial examinations  (7%)"
   const letterMatch = raw.match(/^([A-Z])[\.\)]\s*/);
   const pctMatch = raw.match(/\((\d+)\s*%\)/);
   let text = raw;
@@ -155,8 +127,6 @@ function extractChoiceText(item: Element): { letter: string; text: string; perce
     text = text.replace(letterMatch[0], '');
   }
   if (pctMatch) text = text.replace(pctMatch[0], '');
-  // post-submit DOM embeds "Incorrect" / "Correct" badge text inside the choice
-  // element — strip so the choice text is just the answer itself.
   text = text.replace(/\b(Incorrect|Correct(\s+answer)?)\b/gi, '').trim();
   return {
     letter,
@@ -165,27 +135,34 @@ function extractChoiceText(item: Element): { letter: string; text: string; perce
   };
 }
 
-function detectMarker(item: Element, kind: 'correct' | 'incorrect'): boolean {
-  const sel = kind === 'correct' ? SELECTORS.correctMarker : SELECTORS.incorrectMarker;
-  if (queryFirst(item, sel)) return true;
-  // last-ditch: visual class names on the row itself
-  const cls = item.className?.toString().toLowerCase() ?? '';
-  if (kind === 'correct' && cls.includes('correct') && !cls.includes('incorrect')) return true;
-  if (kind === 'incorrect' && (cls.includes('incorrect') || cls.includes('wrong'))) return true;
-  return false;
+function hasMarker(item: Element, kind: 'correct' | 'incorrect' | 'userPick'): boolean {
+  const sel =
+    kind === 'correct'
+      ? SELECTORS.correctMarker
+      : kind === 'incorrect'
+        ? SELECTORS.incorrectMarker
+        : SELECTORS.userPickMarker;
+  return !!queryFirst(item, sel);
 }
 
-function detectUserPick(item: Element): boolean {
-  const radio = item.querySelector<HTMLInputElement>('input[type="radio"]');
-  if (radio?.checked) return true;
-  const aria = item.getAttribute('aria-checked');
-  if (aria === 'true') return true;
-  return false;
+/** True when the choice list is in its post-grade state (radios disabled). */
+function isGraded(): boolean {
+  return !!queryFirst(document, SELECTORS.gradedFlag);
 }
 
-// UWorld toolbar / nav controls are also <a> elements. When the stem falls
-// back to a broad ancestor container these can leak in, so we filter them out
-// of exhibit detection by their (case-insensitive) label.
+/**
+ * Extract the QID from `div.question-details` text, which looks like
+ *   "Item: 3 of 20 Question Id: 19996"
+ * QID is any run of digits (no fixed width).
+ */
+function extractQuestionId(): { questionId?: string; questionNumber?: string } {
+  const el = queryFirst(document, SELECTORS.questionIdContainer);
+  if (!el) return {};
+  const text = clean(el.textContent);
+  const qid = text.match(/Question Id:\s*(\d+)/i)?.[1];
+  return { questionId: qid, questionNumber: text || undefined };
+}
+
 const NON_EXHIBIT_ANCHOR = [
   'mark question',
   'full screen',
@@ -208,18 +185,12 @@ const NON_EXHIBIT_ANCHOR = [
   'help',
 ];
 
-/**
- * UWorld embeds exhibits / media / images as bare `<a>exhibit</a>` anchors in
- * the stem (Angular click handlers, no href). `textContent` flattens them to a
- * plain word, so the student easily misses that there's something to open.
- * Collect the link labels so the panel can surface a can't-miss flag.
- */
 function extractExhibits(container: Element): string[] {
   const choiceList = queryFirst(document, SELECTORS.choiceList);
   const out: string[] = [];
   const seen = new Set<string>();
   for (const a of Array.from(container.querySelectorAll('a'))) {
-    if (choiceList && choiceList.contains(a)) continue; // skip choice-row anchors
+    if (choiceList && choiceList.contains(a)) continue;
     const label = clean(a.textContent);
     if (!label || label.length > 80) continue;
     if (NON_EXHIBIT_ANCHOR.some((t) => label.toLowerCase().includes(t))) continue;
@@ -239,47 +210,59 @@ export function parseQuestion(): ParsedQuestion | null {
   if (stem.length < 30) return null;
 
   const items = findChoiceItems();
-  // Need real choices, not a half-rendered page. A UWorld question always
-  // has at least two answer choices.
   if (items.length < 2) return null;
 
+  const graded = isGraded();
   const choices: AnswerChoice[] = items.map((item, idx) => {
     const { letter, text, percentage } = extractChoiceText(item);
     return {
       letter: letter || letterFor(idx),
       text,
       percentage,
-      isCorrect: detectMarker(item, 'correct'),
-      isUserPick: detectUserPick(item),
+      // Markers only make sense post-grade.
+      isCorrect: graded ? hasMarker(item, 'correct') : false,
+      isUserPick: hasMarker(item, 'userPick'),
     };
   });
 
-  // If every choice text is empty, the parser hasn't found the real labels yet.
-  // Bail so the observer can retry on the next mutation.
   const hasAnyText = choices.some((c) => c.text.length > 1);
   if (!hasAnyText) return null;
 
-  const labs = extractLabs(stem);
   const exhibits = extractExhibits(found.container);
-  const idEl = queryFirst(document, SELECTORS.questionIdContainer);
-  const idText = clean(idEl?.textContent);
-  const idMatch = idText.match(/(\d{3,})/);
+  const { questionId, questionNumber } = extractQuestionId();
 
   return {
     questionHash: hashStem(stem),
     stem,
-    vitals: [],
-    labs,
     choices,
     exhibits,
-    questionId: idMatch?.[1],
-    questionNumber: idText || undefined,
+    questionId,
+    questionNumber,
   };
+}
+
+/**
+ * Read UWorld's `.standards` block at the bottom of the explanation. Each
+ * column has a `.standard-description` (value) and a `.standard-header`
+ * (label — "Subject" / "System" / "Topic"). We key by label, not column
+ * order, in case UWorld ever reshuffles.
+ */
+function extractStandards(): { subject?: string; system?: string; topic?: string } {
+  const fields = queryAll(document, SELECTORS.metadataField);
+  const out: Record<string, string> = {};
+  for (const f of fields) {
+    const label = clean(f.querySelector('.standard-header')?.textContent).toLowerCase();
+    const value = clean(f.querySelector('.standard-description')?.textContent);
+    if (label && value) out[label] = value;
+  }
+  return { subject: out.subject, system: out.system, topic: out.topic };
 }
 
 export function parseExplanation(question: ParsedQuestion): ParsedExplanation | null {
   const exEl = queryFirst(document, SELECTORS.explanationContainer);
   if (!exEl) return null;
+  if (!isGraded()) return null;
+
   const explanationText = stripExplanationNoise(clean(exEl.textContent));
   if (explanationText.length < 50) return null;
 
@@ -288,10 +271,16 @@ export function parseExplanation(question: ParsedQuestion): ParsedExplanation | 
   let userLetter: string | undefined;
   items.forEach((item, idx) => {
     const letter = question.choices[idx]?.letter ?? letterFor(idx);
-    if (detectMarker(item, 'correct')) correctLetter = letter;
-    if (detectUserPick(item) || detectMarker(item, 'incorrect')) userLetter = userLetter ?? letter;
+    if (hasMarker(item, 'correct')) correctLetter = letter;
+    // User's pick = whichever row has the checked radio. The wrong-pick icon
+    // is a secondary signal in case the radio class is ever cleared.
+    if (hasMarker(item, 'userPick') || hasMarker(item, 'incorrect')) {
+      userLetter = userLetter ?? letter;
+    }
   });
   if (!correctLetter) return null;
+
+  const { subject, system, topic } = extractStandards();
 
   return {
     questionHash: question.questionHash,
@@ -299,12 +288,13 @@ export function parseExplanation(question: ParsedQuestion): ParsedExplanation | 
     correctLetter,
     userLetter,
     wasCorrect: !!userLetter && userLetter === correctLetter,
+    subject,
+    system,
+    topic,
   };
 }
 
-/**
- * Click the radio for a given letter. Returns true if a click was dispatched.
- */
+/** Click the radio for a given letter. Returns true if a click was dispatched. */
 export function forwardClick(letter: string): boolean {
   const items = findChoiceItems();
   for (let i = 0; i < items.length; i++) {
@@ -320,9 +310,6 @@ export function forwardClick(letter: string): boolean {
   return false;
 }
 
-/**
- * Health check used by the side panel — surfaces broken selectors immediately.
- */
 export function selectorHealth(): { ok: boolean; missing: string[] } {
   const missing: string[] = [];
   if (!findStem()) missing.push('questionStem');

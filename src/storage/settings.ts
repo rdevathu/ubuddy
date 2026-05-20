@@ -8,10 +8,16 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 function migrate(s: AppSettings): AppSettings {
-  // Audio/voice (TTS) support was removed. Drop any stale stored TTS keys so
-  // they don't linger in chrome.storage.local indefinitely.
+  // Drop fields that used to live in settings but were removed:
+  //   - tts* / autoReadOnQuestion: audio/voice support was removed
+  //   - llmModel / resetChatOnNewQuestion / stepbuddyEnabled: model is pinned,
+  //     chat always resets on a new question, and StepBuddy is now the core
+  //     feature (no toggle)
   const bag = s as unknown as Record<string, unknown>;
-  for (const k of ['ttsProvider', 'ttsVoice', 'ttsModel', 'ttsRate', 'autoReadOnQuestion']) {
+  for (const k of [
+    'ttsProvider', 'ttsVoice', 'ttsModel', 'ttsRate', 'autoReadOnQuestion',
+    'llmModel', 'resetChatOnNewQuestion', 'stepbuddyEnabled',
+  ]) {
     delete bag[k];
   }
   return s;

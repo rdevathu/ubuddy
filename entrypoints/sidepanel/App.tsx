@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAny, sendToTab } from '../../src/messaging/bus';
 import { streamChat } from '../../src/llm/client';
+import { MODEL_ID, MODEL_LABEL } from '../../src/llm/model';
 import { intensePrompt } from '../../src/llm/prompts';
-import { Celebration } from '../../src/panel/Celebration';
 import { ChatBox } from '../../src/panel/ChatBox';
-import { ObjectiveData } from '../../src/panel/ObjectiveData';
+import { LogCard } from '../../src/panel/LogCard';
 import { QuestionView } from '../../src/panel/QuestionView';
-import { ReflectionForm } from '../../src/panel/ReflectionForm';
 import { SettingsPanel } from '../../src/panel/SettingsPanel';
 import { SummaryControls } from '../../src/panel/SummaryControls';
 import { useStore } from '../../src/state/store';
@@ -20,7 +19,6 @@ export function App() {
   const setSettings = useStore((s) => s.setSettings);
   const question = useStore((s) => s.question);
   const setQuestion = useStore((s) => s.setQuestion);
-  const explanation = useStore((s) => s.explanation);
   const setExplanation = useStore((s) => s.setExplanation);
   const setSelectedLetter = useStore((s) => s.setSelectedLetter);
   const setIsSummarizing = useStore((s) => s.setIsSummarizing);
@@ -38,10 +36,7 @@ export function App() {
   useEffect(() => {
     console.log('[ubuddy:panel] mount');
     loadSettings().then((s) => {
-      console.log('[ubuddy:panel] settings loaded:', {
-        llmModel: s.llmModel,
-        hasKey: !!s.openrouterApiKey,
-      });
+      console.log('[ubuddy:panel] settings loaded:', { hasKey: !!s.openrouterApiKey });
       setSettings(s);
     });
     streakStats().then(setStreak);
@@ -82,10 +77,7 @@ export function App() {
         } catch (e) {
           console.warn('persist explanation failed', e);
         }
-        // NOTE: nothing is pushed to StepBuddy here. There is no auto-logger.
-        // The student's own takeaway is the only thing ever sent, via the
-        // explicit button in ReflectionForm — so a single write, their words,
-        // and no need for an update RPC.
+        // The log-to-StepBuddy push is gated on an explicit click in LogCard.
       }
     });
     return off;
@@ -124,11 +116,7 @@ export function App() {
       setError('Add your OpenRouter API key in Settings to summarize.');
       return;
     }
-    if (!settings.llmModel) {
-      setError('Pick a chat model in Settings (load the model list and select one).');
-      return;
-    }
-    console.log('[ubuddy:panel] summarize: llm=', settings.llmModel);
+    console.log('[ubuddy:panel] summarize: llm=', MODEL_ID);
     setError(null);
     summaryAbort.current?.abort();
     setIntenseSummary('');
@@ -139,7 +127,7 @@ export function App() {
     streamChat(
       {
         apiKey: settings.openrouterApiKey,
-        model: settings.llmModel,
+        model: MODEL_ID,
         messages: [
           { id: 'sys', role: 'system', content: system },
           { id: 'u', role: 'user', content: user },
@@ -152,14 +140,11 @@ export function App() {
         onError: (err) => {
           console.error('[ubuddy:panel] summarize stream error:', err);
           setIsSummarizing(false);
-          setError(`[${settings.llmModel}] ${err.message}`);
+          setError(`[${MODEL_LABEL}] ${err.message}`);
         },
       },
     );
   }, [settings, setIsSummarizing, appendIntenseSummary, setIntenseSummary]);
-
-  const showCelebration = explanation?.wasCorrect === true;
-  const showReflection = explanation && !explanation.wasCorrect;
 
   return (
     <div className="app">
@@ -185,21 +170,15 @@ export function App() {
           )}
           {error && <div className="banner banner--err">{error}</div>}
           {stepbuddy.status === 'logging' && (
-            <div className="banner banner--warn">Logging miss to StepBuddy…</div>
-          )}
-          {stepbuddy.status === 'logged' && (
-            <div className="banner banner--ok">
-              Logged to StepBuddy{stepbuddy.message ? ` · ${stepbuddy.message}` : ''}
-            </div>
+            <div className="banner banner--warn">Logging to StepBuddy…</div>
           )}
           {stepbuddy.status === 'error' && (
             <div className="banner banner--err">StepBuddy: {stepbuddy.message}</div>
           )}
+          {/* LogCard is the headline action when graded — keep it on top. */}
+          <LogCard />
           <SummaryControls onSummarize={summarizeNow} />
           <QuestionView />
-          <ObjectiveData />
-          {showCelebration && <Celebration />}
-          {showReflection && <ReflectionForm />}
           {question && <ChatBox />}
         </div>
       )}
@@ -215,7 +194,7 @@ function Streak() {
   const pct = Math.round((streak.correct / streak.total) * 100);
   return (
     <div className="app__streak">
-      🔥 {streak.current} · {pct}% ({streak.correct}/{streak.total})
+      {streak.current} streak · {pct}% ({streak.correct}/{streak.total})
     </div>
   );
 }

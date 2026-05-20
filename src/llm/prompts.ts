@@ -1,5 +1,4 @@
 import type { ParsedExplanation, ParsedQuestion } from '../types';
-import { summarizeLabsForLLM } from '../uworld/labs';
 
 /**
  * Strip anything that even smells like the answer or rationale. The intense
@@ -11,7 +10,7 @@ function sanitizeStemForIntense(stem: string): string {
     /\bExplanation:?/i,
     /\bEducational objective:?/i,
     /\bCorrect answer\b/i,
-    /\bThis patient (most likely )?has\b/i, // typical first line of UWorld explanations
+    /\bThis patient (most likely )?has\b/i,
   ];
   let cut = stem.length;
   for (const re of markers) {
@@ -37,7 +36,6 @@ function extractQuestionLine(stem: string): string {
 
 export function intensePrompt(question: ParsedQuestion): { system: string; user: string } {
   const stem = sanitizeStemForIntense(question.stem);
-  const labLine = summarizeLabsForLLM(question.labs);
   const finalQuestion = extractQuestionLine(stem);
 
   return {
@@ -75,8 +73,6 @@ export function intensePrompt(question: ParsedQuestion): { system: string; user:
       'STEM (this is the only patient information you may use):',
       stem,
       '',
-      `ABNORMAL LABS (already classified, units stripped, temp in °F): ${labLine}`,
-      '',
       `THE ACTUAL QUESTION TO RESTATE VERBATIM AT THE END: ${finalQuestion}`,
       '',
       'Produce ONE paragraph. No labels. No markdown. Telegraphic case + abnormal findings + the question.',
@@ -111,3 +107,38 @@ export function chatSystemPrompt(question: ParsedQuestion, explanation?: ParsedE
   return lines.join('\n');
 }
 
+/**
+ * Boil the official explanation + stem down to a 2-4 sentence learning rule
+ * the student can stash in StepBuddy. Used by the "Auto-draft" button on the
+ * log card — the student then edits before saving.
+ */
+export function draftLearningPrompt(
+  question: ParsedQuestion,
+  explanation: ParsedExplanation,
+): { system: string; user: string } {
+  return {
+    system: [
+      'You boil a med student\'s board question + its official explanation down to the takeaway they should remember.',
+      'Output ONE block of 2-4 short sentences in plain prose. No markdown, no labels, no headings, no bullets.',
+      'Lead with the high-yield rule. Then briefly state when/why it applies. No "the answer is…", no choice letters.',
+      'Be specific to the medical fact — generic platitudes are useless ("always consider the differential" → bad).',
+      'Cap at ~280 characters. Imperative voice is fine ("In a patient with X, do Y because Z.").',
+    ].join('\n'),
+    user: [
+      'STEM:',
+      question.stem.slice(0, 4000),
+      '',
+      'CHOICES:',
+      ...question.choices.map(
+        (c) => `${c.letter}. ${c.text}${c.isCorrect ? '   [correct]' : ''}${c.isUserPick ? '   [student picked]' : ''}`,
+      ),
+      '',
+      'OFFICIAL EXPLANATION:',
+      explanation.explanationText.slice(0, 6000),
+      '',
+      `Student picked ${explanation.userLetter ?? '(unknown)'}; correct is ${explanation.correctLetter}.`,
+      '',
+      'Write the takeaway now — 2-4 sentences, plain prose.',
+    ].join('\n'),
+  };
+}

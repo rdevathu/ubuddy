@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import { streamChat } from '../llm/client';
+import { MODEL_ID, MODEL_LABEL } from '../llm/model';
 import { chatSystemPrompt } from '../llm/prompts';
 import type { ChatMessage } from '../types';
 
@@ -29,10 +30,6 @@ export function ChatBox() {
       setError('Add your OpenRouter API key in Settings.');
       return;
     }
-    if (!settings.llmModel) {
-      setError('Pick a chat model in Settings.');
-      return;
-    }
     setError(null);
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: input.trim() };
     const assistantMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: '' };
@@ -53,7 +50,7 @@ export function ChatBox() {
     streamChat(
       {
         apiKey: settings.openrouterApiKey,
-        model: settings.llmModel,
+        model: MODEL_ID,
         messages,
         signal: ctrl.signal,
       },
@@ -66,7 +63,7 @@ export function ChatBox() {
         onError: (err) => {
           console.error('[ubuddy:chat] stream error:', err);
           setStreaming(false);
-          setError(`[${settings.llmModel}] ${err.message}`);
+          setError(`[${MODEL_LABEL}] ${err.message}`);
         },
       },
     );

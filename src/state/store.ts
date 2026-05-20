@@ -1,5 +1,23 @@
 import { create } from 'zustand';
-import { DEFAULT_SETTINGS, type AppSettings, type ChatMessage, type ParsedExplanation, type ParsedQuestion, type WhyWrong } from '../types';
+import {
+  DEFAULT_SETTINGS,
+  type AppSettings,
+  type ChatMessage,
+  type ParsedExplanation,
+  type ParsedQuestion,
+} from '../types';
+import type { MissType } from '../stepbuddy/client';
+
+export interface LogFormState {
+  /** True once the student opens the card (auto for wrong, on-click for right). */
+  open: boolean;
+  /** The takeaway, draft or final. */
+  rule: string;
+  /** How they want to categorize it for StepBuddy. */
+  missType: MissType;
+  /** True while the LLM is streaming an auto-draft into `rule`. */
+  drafting: boolean;
+}
 
 export interface AppState {
   settings: AppSettings;
@@ -9,7 +27,7 @@ export interface AppState {
   isSummarizing: boolean;
   intenseSummary: string;
   parserHealth: { ok: boolean; missing: string[] } | null;
-  reflection: { whyWrong?: WhyWrong; keyLearning?: string; saved: boolean };
+  logForm: LogFormState;
   chat: ChatMessage[];
   chatStreaming: boolean;
   streak: { current: number; total: number; correct: number };
@@ -23,7 +41,8 @@ export interface AppState {
   setIntenseSummary: (s: string) => void;
   appendIntenseSummary: (s: string) => void;
   setParserHealth: (h: { ok: boolean; missing: string[] } | null) => void;
-  setReflection: (r: { whyWrong?: WhyWrong; keyLearning?: string; saved?: boolean }) => void;
+  setLogForm: (patch: Partial<LogFormState>) => void;
+  appendLogFormRule: (s: string) => void;
   resetChat: () => void;
   appendChatMessage: (m: ChatMessage) => void;
   updateChatMessage: (id: string, content: string) => void;
@@ -31,6 +50,13 @@ export interface AppState {
   setStreak: (s: { current: number; total: number; correct: number }) => void;
   setStepbuddy: (s: { status: 'idle' | 'logging' | 'logged' | 'error'; message?: string }) => void;
 }
+
+const FRESH_LOG_FORM: LogFormState = {
+  open: false,
+  rule: '',
+  missType: 'knowledge',
+  drafting: false,
+};
 
 export const useStore = create<AppState>((set) => ({
   settings: DEFAULT_SETTINGS,
@@ -40,31 +66,34 @@ export const useStore = create<AppState>((set) => ({
   isSummarizing: false,
   intenseSummary: '',
   parserHealth: null,
-  reflection: { saved: false },
+  logForm: FRESH_LOG_FORM,
   chat: [],
   chatStreaming: false,
   streak: { current: 0, total: 0, correct: 0 },
   stepbuddy: { status: 'idle' },
 
   setSettings: (settings) => set({ settings }),
+  // Opening a new question wipes per-question scratch state. Chat resets too —
+  // the previous question's transcript is irrelevant.
   setQuestion: (question) =>
-    set((state) => ({
+    set({
       question,
       explanation: null,
       selectedLetter: null,
       intenseSummary: '',
-      reflection: { saved: false },
+      logForm: FRESH_LOG_FORM,
       stepbuddy: { status: 'idle' },
-      chat: state.settings.resetChatOnNewQuestion ? [] : state.chat,
-    })),
+      chat: [],
+    }),
   setExplanation: (explanation) => set({ explanation }),
   setSelectedLetter: (selectedLetter) => set({ selectedLetter }),
   setIsSummarizing: (isSummarizing) => set({ isSummarizing }),
   setIntenseSummary: (intenseSummary) => set({ intenseSummary }),
   appendIntenseSummary: (s) => set((state) => ({ intenseSummary: state.intenseSummary + s })),
   setParserHealth: (parserHealth) => set({ parserHealth }),
-  setReflection: (patch) =>
-    set((state) => ({ reflection: { ...state.reflection, ...patch } })),
+  setLogForm: (patch) => set((state) => ({ logForm: { ...state.logForm, ...patch } })),
+  appendLogFormRule: (s) =>
+    set((state) => ({ logForm: { ...state.logForm, rule: state.logForm.rule + s } })),
   resetChat: () => set({ chat: [] }),
   appendChatMessage: (m) => set((state) => ({ chat: [...state.chat, m] })),
   updateChatMessage: (id, content) =>

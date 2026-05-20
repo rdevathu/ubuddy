@@ -7,7 +7,7 @@ export default defineConfig({
   manifest: {
     name: 'UBuddy',
     description: 'AI study companion for UWorld questions',
-    version: '0.1.0',
+    // version is taken from package.json by WXT — keep it bumped there.
     permissions: ['storage', 'sidePanel', 'activeTab', 'scripting'],
     host_permissions: [
       '*://*.uworld.com/*',

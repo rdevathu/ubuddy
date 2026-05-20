@@ -1,125 +1,176 @@
 # UBuddy
 
-Voice + AI study companion for UWorld. A Chrome side-panel extension that:
+A Chrome side-panel extension for [UWorld](https://www.uworld.com) that
+generates a tight clinical summary of each question, lets you chat about it,
+and one-click-logs every graded question — wrong **or** right — to
+[StepBuddy](https://stepbuddy.devathulab.com) with your own takeaway.
 
-- Reads questions aloud with two verbosity modes
-- Gives a context-aware chat about every question (auto-prefixed with the stem,
-  choices, your pick, the correct answer, and the official explanation)
-- Celebrates correct answers; captures a one-line reflection on misses
-- Tracks streaks and accuracy locally
+Built for a few friends. Not on the Chrome Web Store. Install instructions
+below.
 
-Built for personal study. Do not redistribute.
+## Requirements
 
-## Setup
+- **Google Chrome** (or another Chromium browser — Edge, Brave, Arc). UBuddy
+  uses Chrome's side-panel API and **does not work in Firefox or Safari.**
+- A **[StepBuddy](https://stepbuddy.devathulab.com) account**, if you want the
+  "log this question" button to do anything. If you don't have one, message
+  Rahul.
+- **`git`** installed (recommended — makes updating a one-liner). Or just
+  download the repo as a ZIP if you prefer.
 
-```bash
-bun install
-bun run build              # produces dist/chrome-mv3
+## Install
+
+### Option A — with `git` (recommended)
+
+```sh
+cd ~/Downloads        # or wherever you want UBuddy to live
+git clone https://github.com/rdevathu/ubuddy.git
 ```
+
+### Option B — download ZIP
+
+1. Go to https://github.com/rdevathu/ubuddy
+2. Click the green **Code** button → **Download ZIP**
+3. Unzip it somewhere you'll remember (e.g. `~/Downloads/ubuddy`)
+
+### Load it into Chrome (both options)
+
+1. Open `chrome://extensions` in Chrome.
+2. Toggle **Developer mode** on (top-right corner).
+3. Click **Load unpacked**.
+4. Pick the **`dist/chrome-mv3`** folder inside the `ubuddy` folder you just
+   cloned/downloaded. (Not the top-level `ubuddy` folder — go one level
+   deeper into `dist/chrome-mv3`.)
+5. UBuddy should now appear in your extensions list.
+6. Click the puzzle-piece icon in Chrome's toolbar and **pin** UBuddy so its
+   icon stays visible.
+
+That's it. Open a UWorld question, click the UBuddy icon (or press
+`Cmd+Shift+U` on Mac / `Ctrl+Shift+U` on Windows), and the side panel opens.
+
+## First-time setup
+
+Open the side panel, click **Settings**, and fill in:
+
+- **StepBuddy email + password** — the account you use at
+  stepbuddy.devathulab.com. Click **Sign in**. The "Logging to StepBuddy"
+  banner should turn green.
+- **OpenRouter API key** — *optional.* See the [OpenRouter section](#openrouter-optional)
+  below.
+
+Settings save automatically. Close the panel and you're done.
+
+## How to use it
+
+When you open a UWorld question:
+
+1. The side panel shows the question stem.
+2. Click **Summarize** to get a tight, blaze-through clinical summary.
+3. **Chat box** at the bottom — ask anything about this question. UBuddy
+   already knows the stem, the choices, and (after you submit) the
+   explanation, so you don't have to copy-paste anything.
+4. **After you submit** the question on UWorld:
+   - **Wrong answer** → the "Log this miss" card opens automatically.
+     Pick why you got it wrong (knowledge gap, careless, etc.) and write
+     a one- or two-sentence takeaway. **Auto-draft** writes a draft for
+     you if you have an OpenRouter key; otherwise just type it. Hit
+     **Log to StepBuddy**.
+   - **Right answer** → click **Log learning** if it taught you something
+     worth remembering. Same form, same flow.
+
+Every graded question (wrong or right, if you chose to log) is pushed to
+StepBuddy. UBuddy figures out the system tag (cardiology, renal, etc.)
+automatically from UWorld's own labels — you don't pick it.
+
+## Updating
+
+When Rahul ships a new version, you'll know — and updating is one step:
+
+**If you cloned with `git`:**
+
+```sh
+cd ~/Downloads/ubuddy        # wherever you cloned it
+git pull
+```
+
+**If you downloaded the ZIP:** re-download the ZIP and replace your old
+`ubuddy` folder with the new one (same path).
 
 Then in Chrome:
 
-1. Open `chrome://extensions`
-2. Enable Developer mode
-3. **Load unpacked** → pick `dist/chrome-mv3`
-4. Click the UBuddy toolbar icon (or hit `Cmd+Shift+U`) to open the side panel
-5. In **Settings**, paste your [OpenRouter](https://openrouter.ai) API key,
-   click **Load models**, pick a chat model and a TTS model + voice, and Save
+1. Go to `chrome://extensions`.
+2. Find the UBuddy card and click the **refresh / reload icon** (↻) on it.
 
-For development:
+Done. New version is live. You **do not** need to remove and re-add the
+extension.
 
-```bash
-bun run dev                # WXT launches Chrome with HMR
-bun run compile            # tsc --noEmit
-```
+## StepBuddy integration
 
-## Keyboard shortcuts
+UBuddy is a companion to [StepBuddy](https://stepbuddy.devathulab.com), a
+Step 2 mistake tracker. Every question you log from UBuddy lands in
+StepBuddy as a row with:
 
-| Shortcut             | Action                    |
-| -------------------- | ------------------------- |
-| `Cmd/Ctrl+Shift+U`   | Toggle the side panel     |
-| `Cmd/Ctrl+Shift+R`   | Read the current question |
+- The question's **system** (cardiovascular, renal, GI, etc.) — auto-mapped
+  from UWorld's own category, no guessing.
+- A **miss type** you pick (e.g. *knowledge gap*, *misread the stem*,
+  *guessed wrong*, or *pure learning* for things you got right but want to
+  remember).
+- A **rule** — the one- or two-sentence takeaway you wrote. This is the
+  whole point; rules are what you'll review.
+- The UWorld question ID, so duplicates don't pile up if you re-open the
+  same question.
 
-## Two reading modes
+You can then review your rules in StepBuddy (Anki export, spaced
+repetition, etc. — that's StepBuddy's job, not UBuddy's).
 
-### Verbatim
+If logging fails, the banner at the top of the side panel will say why
+(usually "sign in to StepBuddy in Settings"). Nothing is ever sent without
+you clicking the log button — UBuddy does not auto-push.
 
-TTS reads the question stem and answer choices word-for-word. Use when you
-want everything literally spoken to you. Works with the free Web Speech API
-(no key needed) or any OpenRouter TTS model.
+## OpenRouter (optional)
 
-### Intense
+UBuddy uses an LLM for three things: the **clinical summary**, the **chat
+box**, and **auto-drafting** your takeaway when logging. All three require
+an [OpenRouter](https://openrouter.ai) API key in Settings.
 
-Optimized for blazing through questions. The LLM produces a tight, single-
-paragraph clinical summary in ~30 seconds of audio:
+**You do not need a key to log questions to StepBuddy.** Logging works
+fine without it — you just write your own takeaway instead of getting an
+auto-draft.
 
-- Lead sentence: age, sex, key history, chief complaint — telegraphic
-- Pertinent positives and negatives the stem volunteers
-- The actual question restated verbatim at the end
-
-Notable design choices:
-
-- **Choices are NOT read aloud** — you read them on screen yourself
-- **No units** anywhere in the audio (no "millimeters of mercury", "Celsius",
-  "milligrams per deciliter") — TTS reads bare numbers
-- **All temperatures in Fahrenheit** — Celsius values from the stem are
-  auto-converted at parse time
-- **Cannot leak the answer** — the stem is sliced at any spoiler marker
-  (`Explanation:`, `Educational objective:`, `Correct answer`,
-  `This patient has`) before the LLM ever sees it
-- **Time-to-first-audio ~500ms** — long sentences are sub-chunked at clause
-  boundaries so the first ~30-60 chars play while the rest fetch in parallel
-
-Both modes share TTS settings: provider (Web Speech or OpenRouter), model,
-voice, speech rate.
-
-## Picking models
-
-In Settings, click **Load models**. UBuddy hits OpenRouter's `/models`
-endpoint, partitions the catalog into Chat (text out) and TTS (audio out /
-has `supported_voices`), and shows two filterable pickers with live pricing
-per million tokens.
-
-When you pick a TTS model, its `supported_voices` populate as a dropdown.
-PCM-only providers (e.g., Gemini TTS) are auto-detected by model id and
-served as `pcm` wrapped in a WAV header so playback works through the
-standard `<audio>` element.
-
-The catalog is cached in `chrome.storage.local` for 24h.
+If you'd like the LLM features but aren't sure how to set up an OpenRouter
+key, message Rahul.
 
 ## Privacy
 
-- Your OpenRouter key lives in `chrome.storage.local` (browser-local). It's
-  never injected into the UWorld page.
-- All API calls originate from the side panel, not the page context.
-- Question history and reflections live locally in IndexedDB. Nothing is
-  uploaded.
+- Your StepBuddy email + password and your OpenRouter API key live in
+  Chrome's local storage on your machine. They are never sent anywhere
+  except StepBuddy and OpenRouter, respectively, and are never injected
+  into the UWorld page.
+- Question history and your written takeaways live locally in your
+  browser's IndexedDB.
+- No telemetry. No analytics. No "phone home."
 
-## Architecture (one screen)
+## Troubleshooting
 
-```
-┌─ UWorld tab ─────┐    ┌─ Background SW ─┐    ┌─ Side Panel ─────┐
-│ content.ts       │    │ background.ts    │    │ App.tsx          │
-│ - parser         │◀──▶│ - opens panel    │◀──▶│ - read flow      │
-│ - MutationObs    │    │ - keyboard cmds  │    │ - TTS pipeline   │
-│ - click forward  │    │ - msg router     │    │ - chat / settings│
-└──────────────────┘    └──────────────────┘    └──────────────────┘
-```
+**The panel says "Parser can't find: …"**
+UWorld changed its page layout. Send Rahul a screenshot — the fix is
+usually a one-line update.
 
-Detailed file tour and design invariants live in [CLAUDE.md](CLAUDE.md).
+**The summary or chat says I need an OpenRouter key**
+Add one in Settings, or just use UBuddy without the LLM features (logging
+still works).
 
-## Stack
+**StepBuddy banner says "Sign in to StepBuddy"**
+Open Settings, paste your StepBuddy email + password, click Sign in.
 
-- [WXT](https://wxt.dev/) — extension framework (MV3, TypeScript, HMR)
-- React 19 + plain CSS (no Tailwind in v1; one self-contained panel)
-- Zustand for app state, Dexie for IndexedDB
-- OpenRouter for LLM (chat completions, streaming) and TTS (`/audio/speech`)
-- Web Speech API as a free TTS fallback
+**Chrome shows a "Developer mode extensions" warning**
+This is expected for any extension not installed from the Chrome Web Store.
+It's not a virus warning — it's Chrome reminding you the extension wasn't
+reviewed by Google. Click "Keep" / dismiss it.
 
-## Limits and known issues
+**It doesn't work on Firefox / Safari**
+Yep — UBuddy is Chromium-only for now (Edge, Brave, Arc, Chrome all work).
 
-- Chromium-only (uses `chrome.sidePanel`). Firefox port would need
-  `sidebarAction`.
-- No automated tests yet — see CLAUDE.md "Open issues / future work".
-- UWorld's DOM occasionally changes; if the panel shows
-  `Parser can't find: …`, edit `src/uworld/selectors.ts` and rebuild.
+## License
+
+MIT. See [LICENSE](LICENSE).

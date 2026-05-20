@@ -8,7 +8,11 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+
+# Build output. `dist/chrome-mv3/` is committed (friends consume it directly);
+# everything else under dist/ and the WXT staging dir is ignored.
+dist/*
+!dist/chrome-mv3/
 .output
 stats.html
 stats-*.json

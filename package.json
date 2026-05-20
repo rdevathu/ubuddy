@@ -1,9 +1,14 @@
 {
   "name": "ubuddy",
-  "description": "Voice + AI study companion for UWorld questions",
+  "description": "AI study companion for UWorld questions — Chromium MV3 side-panel extension",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rdevathu/ubuddy.git"
+  },
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",

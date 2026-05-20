@@ -8,8 +8,10 @@ UWorld, generates an optional tight LLM "blaze-through" summary of the
 stem, offers a context-aware chat, and one-click-logs every graded
 question — wrong **or** right — to StepBuddy with the student's own
 takeaway. (Audio/voice read-aloud existed in v0; it is **fully removed**.
-See "Audio/voice — REMOVED".) **Personal-use only — one user, one machine,
-local-only repo: no git remote, no CI, no Chrome Web Store listing.**
+See "Audio/voice — REMOVED".) **Distribution model: a public GitHub repo at
+https://github.com/rdevathu/ubuddy that a small handful of friends `git
+clone` + `git pull` to update. No Chrome Web Store listing, no CI. The
+built `dist/chrome-mv3/` is committed so friends never run `bun`.**
 
 ---
 
@@ -34,11 +36,13 @@ local-only repo: no git remote, no CI, no Chrome Web Store listing.**
 1. **Start every task in a git worktree.** Call `EnterWorktree` before any
    edit. Rahul runs parallel agents; the shared checkout is his — never edit
    it directly.
-2. **Finish, then land on `main`. Do not ask "shall I commit / merge?"** Rahul
-   only ever tests from `main`, because the loaded extension builds from the
-   primary checkout. So the pre-authorized, expected end state of *every* task
-   is: work merged to `main` **and** `dist/chrome-mv3` rebuilt there. There is
-   no remote and no deploy — "ship" means exactly those two things.
+2. **Finish, then land on `main`, then push. Do not ask "shall I commit /
+   merge / push?"** Rahul only ever tests from `main`, because the loaded
+   extension builds from the primary checkout. So the pre-authorized, expected
+   end state of *every* task is: work merged to `main`, `dist/chrome-mv3/`
+   rebuilt **and committed** there, and `git push origin main` so friends can
+   `git pull` the update. "Ship" means exactly those three things — without the
+   push, the friends' copies go stale.
 3. **Before landing, both gates must be green:** `bun run compile` (tsc
    typecheck, no JS) **and** `bun run build` (the real WXT prod build that
    produces `dist/chrome-mv3`). `bun run dev` is more forgiving than the prod
@@ -54,31 +58,56 @@ local-only repo: no git remote, no CI, no Chrome Web Store listing.**
    (worktree branch names, build hashes, file counts, tsc timings).
 7. **Default to action over consultation.** Rahul is studying while you work.
 
-### Land-on-main sequence (worktree → `main` → fresh `dist/`)
+### Land-on-main sequence (worktree → `main` → fresh `dist/` → `git push`)
 
 From the worktree, once `bun run compile` and `bun run build` are both green:
 
 ```sh
+# Bump version in package.json per semver (see "Versioning" below) BEFORE
+# committing — fixes = patch, features = minor, breaking parser/state = major.
+# WXT reads the version from package.json into the built manifest.
+
 git add -A
 git -c commit.gpgsign=false commit -m "imperative subject
 
 Optional short body explaining the why if non-obvious."
 # (append the Co-Authored-By trailer per global instructions)
 
-# Local repo, no remote: land on main in the PRIMARY checkout, then rebuild
-# there so the loaded extension picks the change up.
+# Land on main in the PRIMARY checkout, rebuild there so the committed
+# dist/chrome-mv3/ tracks the new version, then push so friends can pull.
 git -C /Users/radev/Developer/UBuddy checkout main
 git -C /Users/radev/Developer/UBuddy merge --no-ff worktree-<name>
 ( cd /Users/radev/Developer/UBuddy && bun run build )
+git -C /Users/radev/Developer/UBuddy add dist/chrome-mv3
+git -C /Users/radev/Developer/UBuddy -c commit.gpgsign=false commit -m "build: dist for vX.Y.Z" --allow-empty
+git -C /Users/radev/Developer/UBuddy push origin main
 ```
 
 - `-c commit.gpgsign=false` — signing can hang the non-interactive shell.
-- Then `ExitWorktree` (remove); the work is already on `main`.
+- The `--allow-empty` on the dist commit is a safety net for tasks that
+  don't change emitted bundle bytes (rare — version stamp alone changes the
+  manifest, so it's almost always a real commit). Skip the commit step
+  entirely if `git status` shows `dist/chrome-mv3` clean after `bun run build`.
+- Then `ExitWorktree` (remove); the work is already on `main` and pushed.
 - **If the primary checkout has unrelated uncommitted work** that blocks
   `checkout main`, that *is* "something went wrong": surface the exact state
   and stop — never stash or discard Rahul's WIP to force the merge.
-- The work is safe on the worktree branch regardless; only the merge + rebuild
-  is what makes it testable.
+- **If `git push` fails on auth**, surface the exact error and stop. Don't
+  retry, don't `--force`, don't change remotes.
+- The work is safe on the worktree branch regardless; only the merge +
+  rebuild + push is what makes it testable for Rahul and his friends.
+
+### Versioning
+
+- **`package.json` `version` is the single source of truth.** WXT reads it
+  into `manifest.json`. `wxt.config.ts` no longer hardcodes a version.
+- **Bump per task, semver:** patch for bug fixes / parser tweaks / copy
+  changes, minor for new user-visible features, major for breaking changes
+  to state shape, the StepBuddy contract, or anything that requires friends
+  to do more than just refresh the extension.
+- Chrome's only hard rule is that the manifest version must strictly
+  increase between loads of the same extension — once shipped, never lower
+  the version, never re-use a number.
 
 ### Build & reload reference
 
@@ -447,10 +476,11 @@ Don't introduce ad-hoc colors. Reuse these tokens.
 - **`chrome.storage.local` size limit is 5MB by default.** We don't store
   the models catalog anymore, so we're nowhere near it.
 - **StepBuddy email + password are stored plaintext in `ubuddy.settings`**
-  and the live session token under `ubuddy.stepbuddy.session`. Same
-  posture as the OpenRouter key (personal-use extension, never injected
-  into the page). If you ever add cloud sync of settings, exclude these
-  keys.
+  and the live session token under `ubuddy.stepbuddy.session`. Same posture
+  as the OpenRouter key — each friend's creds live in *their* browser, never
+  injected into the page, never sent anywhere except Supabase Auth. The
+  public repo contains zero per-user secrets. If cloud sync of settings is
+  ever added, exclude these keys.
 - **StepBuddy fetches go from the side panel, not a content script.** The
   panel is a privileged extension page with the Supabase host in
   `host_permissions`, so it's not CORS-blocked (content scripts would be).
@@ -554,11 +584,10 @@ Real but deliberately not addressed:
   ideal for blazing-through workflow.
 - **`ParsedQuestion.exhibits` has no UI surface.** The field is populated;
   rendering a flag is a one-liner in `QuestionView`.
-- **README.md is stale** (still describes the removed TTS pipeline /
-  model picker). Update before any redistribution scenario; not urgent
-  for personal use.
 - **`canvas-confetti` is an unused dependency** left from the removed
   Celebration component. Safe to drop on the next dep sweep.
+- **No CHANGELOG yet.** Friends discover what changed by reading commit
+  messages on the GitHub repo. Worth adding if the friend-count ever grows.
 
 ---
 

@@ -6,7 +6,7 @@ import {
   type ParsedExplanation,
   type ParsedQuestion,
 } from '../types';
-import type { MissType } from '../stepbuddy/client';
+import type { MissType, SystemTag } from '../stepbuddy/client';
 
 export interface LogFormState {
   /** True once the student opens the card (auto for wrong, on-click for right). */
@@ -15,6 +15,13 @@ export interface LogFormState {
   rule: string;
   /** How they want to categorize it for StepBuddy. */
   missType: MissType;
+  /**
+   * Manual system_tag override. `null` means "use the value mapped from
+   * UWorld's `.standards` label" — the rare-case escape hatch is when the
+   * student disagrees with UWorld's category or UWorld renamed something we
+   * don't recognize.
+   */
+  systemOverride: SystemTag | null;
   /** True while the LLM is streaming an auto-draft into `rule`. */
   drafting: boolean;
 }
@@ -55,6 +62,7 @@ const FRESH_LOG_FORM: LogFormState = {
   open: false,
   rule: '',
   missType: 'knowledge',
+  systemOverride: null,
   drafting: false,
 };
 

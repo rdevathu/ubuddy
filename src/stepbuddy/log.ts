@@ -18,7 +18,7 @@
 import type { AppSettings, ParsedExplanation, ParsedQuestion } from '../types';
 import { getQuestionByHash, setStepbuddyMistakeId } from '../storage/db';
 import { mapUworldSystem } from './classify';
-import { getSession, logMistake, type MissType } from './client';
+import { getSession, logMistake, type MissType, type SystemTag } from './client';
 
 export type LogResult =
   | { ok: true; id: string; system: string; miss: MissType }
@@ -42,10 +42,16 @@ export interface LogOpts {
   rule: string;
   /** How they want this categorized. `pure_learning` for right-answer logs. */
   missType: MissType;
+  /**
+   * Manual system_tag override. When provided, wins over the deterministic
+   * mapping from UWorld's `.standards` label — escape hatch for when the
+   * student disagrees with UWorld or UWorld renames a category we don't know.
+   */
+  systemOverride?: SystemTag | null;
 }
 
 export async function logToStepBuddy(opts: LogOpts): Promise<LogResult> {
-  const { question, explanation, rule, missType } = opts;
+  const { question, explanation, rule, missType, systemOverride } = opts;
   const hash = question.questionHash;
 
   const trimmedRule = rule.trim();
@@ -64,7 +70,7 @@ export async function logToStepBuddy(opts: LogOpts): Promise<LogResult> {
   inFlight.add(hash);
 
   try {
-    const system_tag = mapUworldSystem(explanation.system);
+    const system_tag = systemOverride ?? mapUworldSystem(explanation.system);
     const id = await logMistake({
       p_date: todayLocal(),
       p_source: 'UWorld',

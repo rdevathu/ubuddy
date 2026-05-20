@@ -22,13 +22,14 @@
  * / retry / SPA re-emit can't double-log.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { streamChat } from '../llm/client';
 import { MODEL_ID, MODEL_LABEL } from '../llm/model';
 import { draftLearningPrompt } from '../llm/prompts';
 import { useStore } from '../state/store';
 import { getQuestionByHash, upsertQuestion } from '../storage/db';
 import { mapUworldSystem } from '../stepbuddy/classify';
+import { parseRule } from '../stepbuddy/parseRule';
 import {
   MISS_TYPES,
   MISS_TYPE_LABELS,
@@ -117,6 +118,10 @@ export function LogCard() {
     ? (['pure_learning', ...WRONG_MISS_TYPES.filter((m) => m !== 'pure_learning')] as MissType[])
     : WRONG_MISS_TYPES;
 
+  // Live preview of `#tags` the student has typed into the takeaway. Recomputed
+  // on every keystroke so the chip row matches exactly what `save` will send.
+  const parsedTags = useMemo(() => parseRule(logForm.rule).tags, [logForm.rule]);
+
   async function autoDraft() {
     if (!question || !explanation) return;
     if (!settings.openrouterApiKey) {
@@ -137,7 +142,10 @@ export function LogCard() {
         ],
       },
       {
-        onDelta: (chunk) => appendLogFormRule(chunk),
+        // Strip every `#` from streamed deltas. The takeaway textarea uses
+        // `#tag` to mark user-typed tags (see parseRule); the AI must never
+        // be able to inject one, even if the system prompt slips.
+        onDelta: (chunk) => appendLogFormRule(chunk.replace(/#/g, '')),
         onDone: () => setLogForm({ drafting: false }),
         onError: (err) => {
           setLogForm({ drafting: false });
@@ -152,6 +160,11 @@ export function LogCard() {
     setSaving(true);
     setError(null);
     try {
+      // Pull `#tag` tokens the student typed out of the rule body. The
+      // cleaned `rule` (no hashtag substrings) is what gets persisted and
+      // sent — the tags ride along as `p_tags`.
+      const { rule: cleanedRule, tags } = parseRule(logForm.rule);
+
       await upsertQuestion({
         questionHash: question.questionHash,
         questionId: question.questionId,
@@ -162,7 +175,7 @@ export function LogCard() {
         correctAnswer: explanation.correctLetter,
         wasCorrect: explanation.wasCorrect,
         explanationText: explanation.explanationText,
-        rule: logForm.rule.trim(),
+        rule: cleanedRule,
       });
 
       setStepbuddy({ status: 'logging' });
@@ -170,7 +183,8 @@ export function LogCard() {
         settings,
         question,
         explanation,
-        rule: logForm.rule,
+        rule: cleanedRule,
+        tags,
         missType: logForm.missType,
         systemOverride: logForm.systemOverride,
       });
@@ -308,11 +322,26 @@ export function LogCard() {
         Takeaway (this is what gets logged)
         <textarea
           rows={4}
-          placeholder="Two to four sentences in your own words…"
+          placeholder="Two to four sentences in your own words. Add #tags inline to categorize…"
           value={logForm.rule}
           onChange={(e) => setLogForm({ rule: e.target.value })}
           disabled={saving || logForm.drafting}
         />
+        <div style={{ fontSize: 11, color: 'var(--fg-dim)', marginTop: 4, minHeight: 16 }}>
+          {parsedTags.length > 0 ? (
+            <span>
+              Tags:{' '}
+              {parsedTags.map((t, i) => (
+                <span key={t}>
+                  <span style={{ color: 'var(--accent)' }}>#{t}</span>
+                  {i < parsedTags.length - 1 ? ' ' : ''}
+                </span>
+              ))}
+            </span>
+          ) : (
+            <span>Type <code>#tagname</code> anywhere to add a tag. Auto-draft never adds tags.</span>
+          )}
+        </div>
       </label>
 
       {error && <div className="banner banner--err">{error}</div>}

@@ -152,8 +152,8 @@ the page.
 │   content.ts     │◀──▶│   background.ts  │◀──▶│   sidepanel/     │
 │                  │    │                  │    │     App.tsx      │
 │ src/uworld/      │    │ - opens panel    │    │ src/panel/*      │
-│   selectors.ts   │    │ - toggle-panel   │    │ src/llm/*        │
-│   parser.ts      │    │   command        │    │ src/state/*      │
+│   selectors.ts   │    │   on icon click  │    │ src/llm/*        │
+│   parser.ts      │    │                  │    │ src/state/*      │
 │   observer.ts    │    │                  │    │ src/storage/*    │
 │   labs.ts (data) │    │                  │    │ src/stepbuddy/*  │
 └──────────────────┘    └──────────────────┘    └──────────────────┘
@@ -163,9 +163,12 @@ the page.
   the `UWorldObserver` (MutationObserver wrapper) and broadcasts question /
   explanation events as DOM changes settle. It also handles `panel:requestParse`
   pull requests from the side panel.
-- **Background SW** (`entrypoints/background.ts`) is a thin shim: opens the
-  side panel via `chrome.sidePanel`, wires the single `toggle-panel` keyboard
-  command (`Cmd/Ctrl+Shift+U`). No other commands are bound.
+- **Background SW** (`entrypoints/background.ts`) is a thin shim: configures
+  `chrome.sidePanel` to open on action-icon click. No keyboard commands —
+  the user opens the panel by clicking the pinned toolbar icon. (Chrome's
+  keyboard-shortcut support for `chrome.commands` is flaky in MV3 side
+  panels — `chrome.sidePanel.open()` requires a user gesture and command
+  invocations don't reliably qualify, so the shortcut was removed.)
 - **Side panel** (`entrypoints/sidepanel/App.tsx` + `src/panel/*`) is where
   all the user-facing work happens — summary, chat, log card, settings,
   history.
@@ -496,7 +499,7 @@ Don't introduce ad-hoc colors. Reuse these tokens.
 
 ```
 entrypoints/
-  background.ts          # tiny shim: panel open, Cmd+Shift+U toggle command
+  background.ts          # tiny shim: configures side panel to open on icon click
   content.ts             # MutationObserver host + message handler
   sidepanel/
     index.html

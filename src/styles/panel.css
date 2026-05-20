@@ -103,7 +103,7 @@ body {
   color: var(--fg-strong);
 }
 
-.app__streak {
+.app__logged {
   font-size: 12px;
   color: var(--fg-dim);
   font-variant-numeric: tabular-nums;

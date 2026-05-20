@@ -9,7 +9,7 @@ import { QuestionView } from '../../src/panel/QuestionView';
 import { SettingsPanel } from '../../src/panel/SettingsPanel';
 import { SummaryControls } from '../../src/panel/SummaryControls';
 import { useStore } from '../../src/state/store';
-import { streakStats, upsertQuestion } from '../../src/storage/db';
+import { loggedCount, upsertQuestion } from '../../src/storage/db';
 import { loadSettings, watchSettings } from '../../src/storage/settings';
 
 type Tab = 'study' | 'settings';
@@ -26,7 +26,7 @@ export function App() {
   const setIntenseSummary = useStore((s) => s.setIntenseSummary);
   const parserHealth = useStore((s) => s.parserHealth);
   const setParserHealth = useStore((s) => s.setParserHealth);
-  const setStreak = useStore((s) => s.setStreak);
+  const setLoggedCount = useStore((s) => s.setLoggedCount);
   const stepbuddy = useStore((s) => s.stepbuddy);
 
   const [tab, setTab] = useState<Tab>('study');
@@ -39,12 +39,17 @@ export function App() {
       console.log('[ubuddy:panel] settings loaded:', { hasKey: !!s.openrouterApiKey });
       setSettings(s);
     });
-    streakStats().then(setStreak);
+    loggedCount().then(setLoggedCount);
     return watchSettings((s) => {
       console.log('[ubuddy:panel] settings changed');
       setSettings(s);
     });
-  }, [setSettings, setStreak]);
+  }, [setSettings, setLoggedCount]);
+
+  // Refresh the lifetime logged counter every time a StepBuddy push succeeds.
+  useEffect(() => {
+    if (stepbuddy.status === 'logged') loggedCount().then(setLoggedCount);
+  }, [stepbuddy.status, setLoggedCount]);
 
   // Listen to runtime messages from content script + background.
   useEffect(() => {
@@ -71,8 +76,6 @@ export function App() {
               wasCorrect: msg.payload.wasCorrect,
               explanationText: msg.payload.explanationText,
             });
-            const next = await streakStats();
-            setStreak(next);
           }
         } catch (e) {
           console.warn('persist explanation failed', e);
@@ -81,7 +84,7 @@ export function App() {
       }
     });
     return off;
-  }, [setQuestion, setExplanation, setSelectedLetter, setStreak]);
+  }, [setQuestion, setExplanation, setSelectedLetter]);
 
   // Pull parse state when the panel opens (handles the "panel opened after
   // question already on screen" case). Does NOT broadcast — the content script
@@ -150,7 +153,7 @@ export function App() {
     <div className="app">
       <div className="app__header">
         <div className="app__brand">UBuddy</div>
-        <Streak />
+        <LoggedCount />
       </div>
       <div className="tabs">
         <button className={tab === 'study' ? 'is-active' : ''} onClick={() => setTab('study')}>
@@ -188,13 +191,12 @@ export function App() {
   );
 }
 
-function Streak() {
-  const streak = useStore((s) => s.streak);
-  if (streak.total === 0) return null;
-  const pct = Math.round((streak.correct / streak.total) * 100);
+function LoggedCount() {
+  const n = useStore((s) => s.loggedCount);
+  if (n === 0) return null;
   return (
-    <div className="app__streak">
-      {streak.current} streak · {pct}% ({streak.correct}/{streak.total})
+    <div className="app__logged" title="Lifetime learnings logged to StepBuddy">
+      {n} logged
     </div>
   );
 }

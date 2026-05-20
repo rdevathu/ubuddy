@@ -39,14 +39,7 @@ export async function recentQuestions(limit = 25): Promise<QuestionRecord[]> {
   return db.questions.orderBy('timestamp').reverse().limit(limit).toArray();
 }
 
-export async function streakStats(): Promise<{ total: number; correct: number; current: number }> {
-  const all = await db.questions.orderBy('timestamp').reverse().toArray();
-  const total = all.length;
-  const correct = all.filter((r) => r.wasCorrect).length;
-  let current = 0;
-  for (const r of all) {
-    if (r.wasCorrect) current += 1;
-    else break;
-  }
-  return { total, correct, current };
+/** Lifetime count of questions that have been pushed to StepBuddy. */
+export async function loggedCount(): Promise<number> {
+  return db.questions.filter((r) => !!r.stepbuddyMistakeId).count();
 }

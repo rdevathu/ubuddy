@@ -37,7 +37,7 @@ export interface AppState {
   logForm: LogFormState;
   chat: ChatMessage[];
   chatStreaming: boolean;
-  streak: { current: number; total: number; correct: number };
+  loggedCount: number;
   stepbuddy: { status: 'idle' | 'logging' | 'logged' | 'error'; message?: string };
 
   setSettings: (s: AppSettings) => void;
@@ -54,7 +54,7 @@ export interface AppState {
   appendChatMessage: (m: ChatMessage) => void;
   updateChatMessage: (id: string, content: string) => void;
   setChatStreaming: (b: boolean) => void;
-  setStreak: (s: { current: number; total: number; correct: number }) => void;
+  setLoggedCount: (n: number) => void;
   setStepbuddy: (s: { status: 'idle' | 'logging' | 'logged' | 'error'; message?: string }) => void;
 }
 
@@ -77,7 +77,7 @@ export const useStore = create<AppState>((set) => ({
   logForm: FRESH_LOG_FORM,
   chat: [],
   chatStreaming: false,
-  streak: { current: 0, total: 0, correct: 0 },
+  loggedCount: 0,
   stepbuddy: { status: 'idle' },
 
   setSettings: (settings) => set({ settings }),
@@ -109,6 +109,6 @@ export const useStore = create<AppState>((set) => ({
       chat: state.chat.map((m) => (m.id === id ? { ...m, content } : m)),
     })),
   setChatStreaming: (chatStreaming) => set({ chatStreaming }),
-  setStreak: (streak) => set({ streak }),
+  setLoggedCount: (loggedCount) => set({ loggedCount }),
   setStepbuddy: (stepbuddy) => set({ stepbuddy }),
 }));

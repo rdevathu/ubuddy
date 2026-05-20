@@ -40,6 +40,14 @@ export interface LogOpts {
   explanation: ParsedExplanation;
   /** The student's takeaway. Required — the RPC rejects an empty rule. */
   rule: string;
+  /**
+   * Hashtags the student typed (`#foo`) parsed out of the raw textarea
+   * before it was trimmed to `rule`. Forwarded to the RPC as `p_tags`.
+   * Optional — empty/missing means no tags. The AI-draft path never emits
+   * these (LogCard strips `#` from streamed deltas), so any tag here came
+   * from a human keystroke.
+   */
+  tags?: string[];
   /** How they want this categorized. `pure_learning` for right-answer logs. */
   missType: MissType;
   /**
@@ -51,7 +59,7 @@ export interface LogOpts {
 }
 
 export async function logToStepBuddy(opts: LogOpts): Promise<LogResult> {
-  const { question, explanation, rule, missType, systemOverride } = opts;
+  const { question, explanation, rule, tags, missType, systemOverride } = opts;
   const hash = question.questionHash;
 
   const trimmedRule = rule.trim();
@@ -79,7 +87,7 @@ export async function logToStepBuddy(opts: LogOpts): Promise<LogResult> {
       p_miss_type: missType,
       p_identifier: question.questionId?.slice(0, 80),
       p_source_other: null,
-      p_tags: [],
+      p_tags: tags && tags.length ? tags.slice(0, 20) : [],
       p_anki_card_made: false,
     });
 

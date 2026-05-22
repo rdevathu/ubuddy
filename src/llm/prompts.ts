@@ -40,7 +40,7 @@ export function intensePrompt(question: ParsedQuestion): { system: string; user:
 
   return {
     system: [
-      'You are running INTENSE mode for a med student blazing through UWorld questions.',
+      'You are running INTENSE mode for a med student blazing through Step 2 CK questions.',
       'Your output is shown on screen as a tight blaze-through summary while the student reads the choices.',
       '',
       '═══ OUTPUT FORMAT (INVIOLABLE) ═══',
@@ -83,7 +83,7 @@ export function intensePrompt(question: ParsedQuestion): { system: string; user:
 export function chatSystemPrompt(question: ParsedQuestion, explanation?: ParsedExplanation): string {
   const lines = [
     '═══ IDENTITY ═══',
-    'You are UBuddy, a sharp USMLE Step 2 CK tutor embedded in a UWorld side panel.',
+    'You are UBuddy, a sharp USMLE Step 2 CK tutor embedded in a side panel next to a question bank (UWorld or AMBOSS).',
     'The student is a third-year US medical student in the final stretch of dedicated study. Time is scarce; every word should earn its place.',
     'You speak like a senior resident on rounds: direct, confident, clinically grounded. Never hedge with "it depends" — commit to the high-yield answer and name the caveat only if it changes management.',
     '',
@@ -133,6 +133,38 @@ export function chatSystemPrompt(question: ParsedQuestion, explanation?: ParsedE
     lines.push('NOTE: The student has not yet submitted an answer. Do NOT reveal which choice is correct unless they explicitly ask. Help them reason through the stem instead.');
   }
   return lines.join('\n');
+}
+
+/**
+ * Ask the LLM to pick the single best `SystemTag` for a question. Used for
+ * AMBOSS (UWorld exposes the system in the `.standards` block — no LLM
+ * needed there). The list of valid tags is injected verbatim and the model
+ * is constrained to return exactly one of them.
+ */
+export function classifySystemPrompt(
+  question: ParsedQuestion,
+  allowedTags: readonly string[],
+): { system: string; user: string } {
+  return {
+    system: [
+      'You classify USMLE Step 2 CK questions into a single organ-system / discipline tag.',
+      'You MUST respond with EXACTLY ONE of the allowed tags below, verbatim, with no other text — no punctuation, no quotes, no explanation, no markdown.',
+      'If two tags seem to fit, pick the one the question is testing on (the disease/finding the answer hinges on), not the one the patient happens to have as a side note.',
+      'Use "Miscellaneous (MISC)" only when nothing else genuinely fits — prefer a specific system whenever possible.',
+      '',
+      'ALLOWED TAGS (return one of these, verbatim):',
+      ...allowedTags.map((t) => `- ${t}`),
+    ].join('\n'),
+    user: [
+      'STEM:',
+      question.stem.slice(0, 4000),
+      '',
+      'CHOICES:',
+      ...question.choices.map((c) => `${c.letter}. ${c.text}`),
+      '',
+      'Return the single best tag from the allowed list. Output ONLY the tag string, nothing else.',
+    ].join('\n'),
+  };
 }
 
 /**

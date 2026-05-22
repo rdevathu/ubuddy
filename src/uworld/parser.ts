@@ -232,6 +232,7 @@ export function parseQuestion(): ParsedQuestion | null {
   const { questionId, questionNumber } = extractQuestionId();
 
   return {
+    source: 'uworld',
     questionHash: hashStem(stem),
     stem,
     choices,

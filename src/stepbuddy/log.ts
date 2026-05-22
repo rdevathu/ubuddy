@@ -18,7 +18,14 @@
 import type { AppSettings, ParsedExplanation, ParsedQuestion } from '../types';
 import { getQuestionByHash, setStepbuddyMistakeId } from '../storage/db';
 import { mapUworldSystem } from './classify';
-import { getSession, logMistake, type MissType, type SystemTag } from './client';
+import {
+  DEFAULT_SYSTEM_TAG,
+  getSession,
+  logMistake,
+  type MissType,
+  type Source,
+  type SystemTag,
+} from './client';
 
 export type LogResult =
   | { ok: true; id: string; system: string; miss: MissType }
@@ -51,15 +58,21 @@ export interface LogOpts {
   /** How they want this categorized. `pure_learning` for right-answer logs. */
   missType: MissType;
   /**
-   * Manual system_tag override. When provided, wins over the deterministic
-   * mapping from UWorld's `.standards` label — escape hatch for when the
-   * student disagrees with UWorld or UWorld renames a category we don't know.
+   * Manual system_tag override. When provided, wins over both the
+   * deterministic UWorld mapping and the AMBOSS LLM classification — escape
+   * hatch for when the student disagrees with the auto-pick.
    */
   systemOverride?: SystemTag | null;
+  /**
+   * LLM-classified system tag for AMBOSS questions (UWorld leaves this null
+   * — its system comes from `.standards`). Wins over the deterministic
+   * mapping when present and no manual override is set.
+   */
+  classifiedSystem?: SystemTag | null;
 }
 
 export async function logToStepBuddy(opts: LogOpts): Promise<LogResult> {
-  const { question, explanation, rule, tags, missType, systemOverride } = opts;
+  const { question, explanation, rule, tags, missType, systemOverride, classifiedSystem } = opts;
   const hash = question.questionHash;
 
   const trimmedRule = rule.trim();
@@ -78,10 +91,18 @@ export async function logToStepBuddy(opts: LogOpts): Promise<LogResult> {
   inFlight.add(hash);
 
   try {
-    const system_tag = systemOverride ?? mapUworldSystem(explanation.system);
+    // System tag priority: manual override → AMBOSS LLM classification →
+    // UWorld's `.standards` map (returns MISC when absent). Source comes
+    // from the question's provider.
+    const system_tag: SystemTag =
+      systemOverride ??
+      (question.source === 'amboss'
+        ? (classifiedSystem ?? DEFAULT_SYSTEM_TAG)
+        : mapUworldSystem(explanation.system));
+    const source: Source = question.source === 'amboss' ? 'AMBOSS' : 'UWorld';
     const id = await logMistake({
       p_date: todayLocal(),
-      p_source: 'UWorld',
+      p_source: source,
       p_system_tag: system_tag,
       p_rule: trimmedRule,
       p_miss_type: missType,

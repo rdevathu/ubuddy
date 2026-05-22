@@ -1,8 +1,8 @@
 {
   "name": "ubuddy",
-  "description": "AI study companion for UWorld questions — Chromium MV3 side-panel extension",
+  "description": "AI study companion for UWorld and AMBOSS Step 2 CK questions — Chromium MV3 side-panel extension",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "license": "MIT",
   "repository": {

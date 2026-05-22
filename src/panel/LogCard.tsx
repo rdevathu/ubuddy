@@ -106,6 +106,12 @@ export function LogCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [explanation?.questionHash]);
 
+  // Live preview of `#tags` the student has typed into the takeaway. Recomputed
+  // on every keystroke so the chip row matches exactly what `save` will send.
+  // Must sit above the null-guard return so hook order stays stable across the
+  // pre-grade → graded transition (otherwise React #310).
+  const parsedTags = useMemo(() => parseRule(logForm.rule).tags, [logForm.rule]);
+
   if (!question || !explanation) return null;
 
   const stepbuddyReady = !!settings.stepbuddyEmail && !!settings.stepbuddyPassword;
@@ -117,10 +123,6 @@ export function LogCard() {
   const allowedMissTypes = wasCorrect
     ? (['pure_learning', ...WRONG_MISS_TYPES.filter((m) => m !== 'pure_learning')] as MissType[])
     : WRONG_MISS_TYPES;
-
-  // Live preview of `#tags` the student has typed into the takeaway. Recomputed
-  // on every keystroke so the chip row matches exactly what `save` will send.
-  const parsedTags = useMemo(() => parseRule(logForm.rule).tags, [logForm.rule]);
 
   async function autoDraft() {
     if (!question || !explanation) return;

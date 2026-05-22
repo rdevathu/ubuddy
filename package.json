@@ -2,7 +2,7 @@
   "name": "ubuddy",
   "description": "AI study companion for UWorld questions — Chromium MV3 side-panel extension",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -25,6 +25,8 @@
     "dexie": "^4.4.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zustand": "^5.0.13"
   },
   "devDependencies": {

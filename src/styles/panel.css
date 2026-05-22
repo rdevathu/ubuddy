@@ -528,6 +528,121 @@ label {
   max-width: 95%;
 }
 
+/* Markdown rendered inside assistant bubbles — tightened so it doesn't
+   look like a blog post. react-markdown's default is too airy for chat. */
+.chat__md {
+  /* Override .chat__msg's pre-wrap so block layout isn't broken by stray
+     newlines between markdown elements. */
+  white-space: normal;
+}
+.chat__md > :first-child {
+  margin-top: 0;
+}
+.chat__md > :last-child {
+  margin-bottom: 0;
+}
+.chat__md p {
+  margin: 0 0 8px 0;
+  white-space: pre-wrap;
+}
+.chat__md p:last-child {
+  margin-bottom: 0;
+}
+.chat__md ul,
+.chat__md ol {
+  margin: 4px 0 8px 0;
+  padding-left: 20px;
+}
+.chat__md ul:last-child,
+.chat__md ol:last-child {
+  margin-bottom: 0;
+}
+.chat__md li {
+  margin: 2px 0;
+}
+.chat__md li > p {
+  margin: 0;
+}
+.chat__md strong {
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+.chat__md em {
+  font-style: italic;
+  color: var(--fg);
+}
+.chat__md code {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--sky);
+}
+.chat__md pre {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin: 6px 0;
+  overflow-x: auto;
+}
+.chat__md pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--fg);
+  font-size: 12px;
+}
+.chat__md blockquote {
+  border-left: 2px solid var(--border-soft);
+  padding: 0 0 0 10px;
+  margin: 6px 0;
+  color: var(--fg-dim);
+}
+.chat__md a {
+  color: var(--sky);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat__md a:hover {
+  color: var(--accent, var(--sky));
+}
+.chat__md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+}
+.chat__md h1,
+.chat__md h2,
+.chat__md h3,
+.chat__md h4 {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fg-strong);
+  margin: 8px 0 4px 0;
+  letter-spacing: -0.005em;
+}
+.chat__md table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+  margin: 6px 0;
+}
+.chat__md th,
+.chat__md td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.chat__md th {
+  background: var(--bg-soft);
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
 /* Banners — matches StepBuddy's tone-tinted callouts (emerald/red/amber/sky). */
 .banner {
   padding: 10px 12px;

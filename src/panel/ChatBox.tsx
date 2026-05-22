@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useStore } from '../state/store';
 import { streamChat } from '../llm/client';
 import { MODEL_ID, MODEL_LABEL } from '../llm/model';
@@ -83,7 +85,19 @@ export function ChatBox() {
         )}
         {chat.map((m) => (
           <div key={m.id} className={`chat__msg chat__msg--${m.role}`}>
-            {m.content || (streaming && m.role === 'assistant' ? '…' : '')}
+            {m.role === 'assistant' ? (
+              m.content ? (
+                <div className="chat__md">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                </div>
+              ) : streaming ? (
+                '…'
+              ) : (
+                ''
+              )
+            ) : (
+              m.content
+            )}
           </div>
         ))}
       </div>

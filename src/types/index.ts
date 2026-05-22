@@ -1,3 +1,11 @@
+/**
+ * Which question bank this parse came from. Drives the StepBuddy `p_source`
+ * value, the per-source identifier shape, and (for AMBOSS) whether the LLM
+ * needs to classify the system — UWorld's `.standards` block gives us the
+ * system deterministically; AMBOSS exposes nothing equivalent.
+ */
+export type QuestionSource = 'uworld' | 'amboss';
+
 export interface AnswerChoice {
   letter: string;
   text: string;
@@ -7,6 +15,7 @@ export interface AnswerChoice {
 }
 
 export interface ParsedQuestion {
+  source: QuestionSource;
   questionHash: string;
   stem: string;
   choices: AnswerChoice[];
@@ -17,6 +26,7 @@ export interface ParsedQuestion {
    * renders these as bare `<a>exhibit</a>` anchors (Angular click handlers,
    * no href) — `textContent` flattens them to a plain word, so the user can
    * easily miss that there is something to open. One entry per anchor.
+   * AMBOSS exposes nothing equivalent in the DOM; the array stays empty.
    */
   exhibits: string[];
 }
@@ -50,6 +60,7 @@ export interface ChatMessage {
 export interface QuestionRecord {
   id?: number;
   questionHash: string;
+  source?: QuestionSource;
   questionId?: string;
   timestamp: number;
   stem: string;
@@ -60,6 +71,12 @@ export interface QuestionRecord {
   explanationText?: string;
   /** The student's own takeaway — the rule sent to StepBuddy on log. */
   rule?: string;
+  /**
+   * LLM-classified `SystemTag` cached per question. Only populated for AMBOSS
+   * (UWorld is deterministic via `.standards`). Re-used when the user logs so
+   * we don't burn tokens on a second classify if they revisit a question.
+   */
+  classifiedSystem?: string;
   /**
    * The uuid returned by StepBuddy's `log_mistake` RPC once this question has
    * been logged. Presence = "already logged" — the dedup guard so an SPA

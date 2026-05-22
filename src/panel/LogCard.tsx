@@ -31,6 +31,7 @@ import { getQuestionByHash, upsertQuestion } from '../storage/db';
 import { mapUworldSystem } from '../stepbuddy/classify';
 import { parseRule } from '../stepbuddy/parseRule';
 import {
+  DEFAULT_SYSTEM_TAG,
   MISS_TYPES,
   MISS_TYPE_LABELS,
   SYSTEM_TAGS,
@@ -59,6 +60,8 @@ export function LogCard() {
   const appendLogFormRule = useStore((s) => s.appendLogFormRule);
   const stepbuddy = useStore((s) => s.stepbuddy);
   const setStepbuddy = useStore((s) => s.setStepbuddy);
+  const classifiedSystem = useStore((s) => s.classifiedSystem);
+  const classifying = useStore((s) => s.classifying);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,10 +118,17 @@ export function LogCard() {
   if (!question || !explanation) return null;
 
   const stepbuddyReady = !!settings.stepbuddyEmail && !!settings.stepbuddyPassword;
-  const mappedSystem = mapUworldSystem(explanation.system);
+  const isAmboss = question.source === 'amboss';
+  // For AMBOSS the auto-pick is the LLM classification (defaulting to MISC
+  // while the classify call is still in flight or when no API key is set).
+  // For UWorld it's the deterministic mapping from the `.standards` block.
+  const mappedSystem: SystemTag = isAmboss
+    ? (classifiedSystem ?? DEFAULT_SYSTEM_TAG)
+    : mapUworldSystem(explanation.system);
   const effectiveSystem: SystemTag = logForm.systemOverride ?? mappedSystem;
   const isOverridden = logForm.systemOverride !== null && logForm.systemOverride !== mappedSystem;
   const alreadyLogged = stepbuddy.status === 'logged';
+  const sourceLabel = isAmboss ? 'AMBOSS' : 'UWorld';
 
   const allowedMissTypes = wasCorrect
     ? (['pure_learning', ...WRONG_MISS_TYPES.filter((m) => m !== 'pure_learning')] as MissType[])
@@ -189,6 +199,7 @@ export function LogCard() {
         tags,
         missType: logForm.missType,
         systemOverride: logForm.systemOverride,
+        classifiedSystem,
       });
       if (r.ok) {
         setStepbuddy({ status: 'logged', message: `${r.system} · ${MISS_TYPE_LABELS[r.miss]}` });
@@ -249,7 +260,7 @@ export function LogCard() {
         </h3>
         {question.questionId && (
           <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
-            UWorld QID {question.questionId}
+            {sourceLabel} QID {question.questionId}
           </span>
         )}
       </div>
@@ -267,16 +278,23 @@ export function LogCard() {
           {SYSTEM_TAGS.map((s) => (
             <option key={s} value={s}>
               {s}
-              {s === mappedSystem ? ' (from UWorld)' : ''}
+              {s === mappedSystem
+                ? isAmboss
+                  ? classifiedSystem
+                    ? ' (AI pick)'
+                    : ''
+                  : ' (from UWorld)'
+                : ''}
             </option>
           ))}
         </select>
         <div style={{ fontSize: 11, color: 'var(--fg-dim)', marginTop: 2 }}>
           {isOverridden ? (
             <>
-              Overriding UWorld’s{' '}
+              Overriding{' '}
+              {isAmboss ? 'AI pick' : 'UWorld’s'}{' '}
               <strong style={{ color: 'var(--fg)' }}>{mappedSystem}</strong>
-              {explanation.system && (
+              {!isAmboss && explanation.system && (
                 <> <span style={{ opacity: 0.7 }}>(label: {explanation.system})</span></>
               )}
               {' · '}
@@ -297,6 +315,16 @@ export function LogCard() {
                 reset
               </button>
             </>
+          ) : isAmboss ? (
+            classifying ? (
+              <>Classifying system with AI…</>
+            ) : classifiedSystem ? (
+              <>Auto-picked by AI (AMBOSS doesn’t expose a system label).</>
+            ) : settings.openrouterApiKey ? (
+              <>No classification yet — pick a system manually.</>
+            ) : (
+              <>Add an OpenRouter key in Settings for AI classification.</>
+            )
           ) : (
             <>Auto-picked from UWorld’s System label.</>
           )}

@@ -15,9 +15,9 @@
 
 import { completeChat } from '../llm/client';
 import { MODEL_ID } from '../llm/model';
-import { draftLearningPrompt } from '../llm/prompts';
+import { classifySystemPrompt, draftLearningPrompt } from '../llm/prompts';
 import type { ParsedExplanation, ParsedQuestion } from '../types';
-import { DEFAULT_SYSTEM_TAG, type SystemTag } from './client';
+import { DEFAULT_SYSTEM_TAG, SYSTEM_TAGS, type SystemTag } from './client';
 
 /**
  * UWorld's "System" labels → StepBuddy's `SystemTag` enum. Every UWorld
@@ -67,6 +67,53 @@ export function mapUworldSystem(uworldSystem: string | undefined | null): System
   if (!uworldSystem) return DEFAULT_SYSTEM_TAG;
   const key = uworldSystem.replace(/\s+/g, ' ').trim().toLowerCase();
   return UWORLD_SYSTEM_MAP[key] ?? DEFAULT_SYSTEM_TAG;
+}
+
+/**
+ * Coerce an arbitrary LLM response into a valid `SystemTag`. The classify
+ * prompt instructs the model to return exactly one tag verbatim, but cheap
+ * models occasionally wrap it in quotes / add punctuation / prefix with a
+ * label. We strip those, then exact-match (case-insensitive) against the
+ * allowed list. Falls back to `Miscellaneous (MISC)` on any miss so we never
+ * push an invalid value to the RPC (which rejects unknown tags hard).
+ */
+function coerceSystemTag(raw: string): SystemTag {
+  const cleaned = raw.replace(/[`"'*_]/g, '').replace(/\s+/g, ' ').trim();
+  const lc = cleaned.toLowerCase();
+  for (const t of SYSTEM_TAGS) {
+    if (t.toLowerCase() === lc) return t;
+  }
+  // Tolerate a leading "Tag:" prefix or wrapping fluff — try to find any
+  // allowed tag as a substring (longest match first to avoid e.g. catching
+  // "Genetics" inside "Pediatric Genetics" hypotheticals).
+  const byLen = [...SYSTEM_TAGS].sort((a, b) => b.length - a.length);
+  for (const t of byLen) {
+    if (lc.includes(t.toLowerCase())) return t;
+  }
+  return DEFAULT_SYSTEM_TAG;
+}
+
+/**
+ * One-shot LLM classify of a question into a StepBuddy `SystemTag`. Used for
+ * AMBOSS (and any future provider that doesn't expose system metadata in the
+ * DOM). The caller is responsible for caching the result on the
+ * `QuestionRecord` so we don't reclassify on every panel open.
+ */
+export async function classifySystemViaLLM(opts: {
+  apiKey: string;
+  question: ParsedQuestion;
+}): Promise<SystemTag> {
+  const { system, user } = classifySystemPrompt(opts.question, SYSTEM_TAGS);
+  const raw = await completeChat({
+    apiKey: opts.apiKey,
+    model: MODEL_ID,
+    temperature: 0,
+    messages: [
+      { id: 'sys', role: 'system', content: system },
+      { id: 'u', role: 'user', content: user },
+    ],
+  });
+  return coerceSystemTag(raw);
 }
 
 function clampRule(s: string): string {

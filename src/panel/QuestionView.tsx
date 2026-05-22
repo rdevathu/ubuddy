@@ -9,7 +9,7 @@ export function QuestionView() {
     return (
       <div className="card">
         <div className="empty">
-          Open a UWorld question — UBuddy will pick it up automatically.
+          Open a UWorld or AMBOSS question — UBuddy will pick it up automatically.
           <div style={{ marginTop: 6, fontSize: 12, color: 'var(--fg-dim)' }}>
             Not seeing one? Try refreshing the page, or clicking Previous / Next to re-trigger UBuddy.
           </div>
@@ -17,6 +17,8 @@ export function QuestionView() {
       </div>
     );
   }
+
+  const sourceLabel = question.source === 'amboss' ? 'AMBOSS' : 'UWorld';
 
   // Once a summary exists it takes over the view and stays — the observer
   // fix keeps it through answer submission so it never has to be regenerated.
@@ -27,7 +29,9 @@ export function QuestionView() {
       <div className="row">
         <h3>{showSummary ? 'Summary' : 'Question'}</h3>
         {question.questionId && (
-          <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>#{question.questionId}</span>
+          <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+            {sourceLabel} #{question.questionId}
+          </span>
         )}
       </div>
       {showSummary ? (

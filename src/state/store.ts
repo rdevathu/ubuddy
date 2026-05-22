@@ -39,6 +39,14 @@ export interface AppState {
   chatStreaming: boolean;
   loggedCount: number;
   stepbuddy: { status: 'idle' | 'logging' | 'logged' | 'error'; message?: string };
+  /**
+   * For AMBOSS only: the LLM-classified `SystemTag` for the current question.
+   * Filled in shortly after `setQuestion` fires (background classify call),
+   * cached on the `QuestionRecord` so we don't reclassify on revisit. UWorld
+   * leaves this null — its system comes deterministically from `.standards`.
+   */
+  classifiedSystem: SystemTag | null;
+  classifying: boolean;
 
   setSettings: (s: AppSettings) => void;
   setQuestion: (q: ParsedQuestion | null) => void;
@@ -56,6 +64,8 @@ export interface AppState {
   setChatStreaming: (b: boolean) => void;
   setLoggedCount: (n: number) => void;
   setStepbuddy: (s: { status: 'idle' | 'logging' | 'logged' | 'error'; message?: string }) => void;
+  setClassifiedSystem: (s: SystemTag | null) => void;
+  setClassifying: (b: boolean) => void;
 }
 
 const FRESH_LOG_FORM: LogFormState = {
@@ -79,6 +89,8 @@ export const useStore = create<AppState>((set) => ({
   chatStreaming: false,
   loggedCount: 0,
   stepbuddy: { status: 'idle' },
+  classifiedSystem: null,
+  classifying: false,
 
   setSettings: (settings) => set({ settings }),
   // Opening a new question wipes per-question scratch state. Chat resets too —
@@ -92,6 +104,8 @@ export const useStore = create<AppState>((set) => ({
       logForm: FRESH_LOG_FORM,
       stepbuddy: { status: 'idle' },
       chat: [],
+      classifiedSystem: null,
+      classifying: false,
     }),
   setExplanation: (explanation) => set({ explanation }),
   setSelectedLetter: (selectedLetter) => set({ selectedLetter }),
@@ -111,4 +125,6 @@ export const useStore = create<AppState>((set) => ({
   setChatStreaming: (chatStreaming) => set({ chatStreaming }),
   setLoggedCount: (loggedCount) => set({ loggedCount }),
   setStepbuddy: (stepbuddy) => set({ stepbuddy }),
+  setClassifiedSystem: (classifiedSystem) => set({ classifiedSystem }),
+  setClassifying: (classifying) => set({ classifying }),
 }));

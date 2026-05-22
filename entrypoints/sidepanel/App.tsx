@@ -9,8 +9,14 @@ import { QuestionView } from '../../src/panel/QuestionView';
 import { SettingsPanel } from '../../src/panel/SettingsPanel';
 import { SummaryControls } from '../../src/panel/SummaryControls';
 import { useStore } from '../../src/state/store';
-import { loggedCount, upsertQuestion } from '../../src/storage/db';
+import {
+  getQuestionByHash,
+  loggedCount,
+  upsertQuestion,
+} from '../../src/storage/db';
 import { loadSettings, watchSettings } from '../../src/storage/settings';
+import { classifySystemViaLLM } from '../../src/stepbuddy/classify';
+import { SYSTEM_TAGS, type SystemTag } from '../../src/stepbuddy/client';
 
 type Tab = 'study' | 'settings';
 
@@ -28,6 +34,8 @@ export function App() {
   const setParserHealth = useStore((s) => s.setParserHealth);
   const setLoggedCount = useStore((s) => s.setLoggedCount);
   const stepbuddy = useStore((s) => s.stepbuddy);
+  const setClassifiedSystem = useStore((s) => s.setClassifiedSystem);
+  const setClassifying = useStore((s) => s.setClassifying);
 
   const [tab, setTab] = useState<Tab>('study');
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +59,57 @@ export function App() {
     if (stepbuddy.status === 'logged') loggedCount().then(setLoggedCount);
   }, [stepbuddy.status, setLoggedCount]);
 
+  // AMBOSS-only: classify the system tag in the background as soon as a
+  // question loads. UWorld doesn't need this — its `.standards` block gives
+  // us the system deterministically (see classify.ts:mapUworldSystem). We
+  // cache the result on the QuestionRecord so revisits skip the LLM call.
+  useEffect(() => {
+    if (!question || question.source !== 'amboss') return;
+    let cancelled = false;
+    (async () => {
+      const cached = await getQuestionByHash(question.questionHash);
+      const cachedTag = cached?.classifiedSystem;
+      if (cached && cachedTag && (SYSTEM_TAGS as readonly string[]).includes(cachedTag)) {
+        if (cancelled) return;
+        setClassifiedSystem(cachedTag as SystemTag);
+        return;
+      }
+      if (!settings.openrouterApiKey) return; // can't classify without a key — defaults to MISC at log
+      setClassifying(true);
+      try {
+        const tag = await classifySystemViaLLM({
+          apiKey: settings.openrouterApiKey,
+          question,
+        });
+        if (cancelled) return;
+        setClassifiedSystem(tag);
+        // Persist alongside whatever the question row already has so a future
+        // panel reopen reads from cache.
+        await upsertQuestion({
+          questionHash: question.questionHash,
+          source: 'amboss',
+          questionId: question.questionId,
+          timestamp: Date.now(),
+          stem: question.stem,
+          choices: question.choices.map((c) => ({ letter: c.letter, text: c.text })),
+          userPick: cached?.userPick ?? '',
+          correctAnswer: cached?.correctAnswer ?? '',
+          wasCorrect: cached?.wasCorrect ?? false,
+          explanationText: cached?.explanationText,
+          rule: cached?.rule,
+          classifiedSystem: tag,
+        });
+      } catch (e) {
+        console.warn('[ubuddy:panel] amboss classify failed', e);
+      } finally {
+        if (!cancelled) setClassifying(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [question?.questionHash, question?.source, settings.openrouterApiKey, setClassifiedSystem, setClassifying]);
+
   // Listen to runtime messages from content script + background.
   useEffect(() => {
     const off = onAny(async (msg) => {
@@ -67,6 +126,7 @@ export function App() {
           if (q) {
             await upsertQuestion({
               questionHash: q.questionHash,
+              source: q.source,
               questionId: q.questionId,
               timestamp: Date.now(),
               stem: q.stem,
@@ -92,7 +152,10 @@ export function App() {
   useEffect(() => {
     (async () => {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.id || !tab.url?.includes('uworld.com')) return;
+      if (!tab?.id) return;
+      const isSupportedHost =
+        tab.url?.includes('uworld.com') || tab.url?.includes('amboss.com');
+      if (!isSupportedHost) return;
       const reply = (await sendToTab(tab.id, { type: 'panel:requestParse' })) as
         | { health?: { ok: boolean; missing: string[] }; question?: any; explanation?: any }
         | undefined;
@@ -171,7 +234,7 @@ export function App() {
         <div className="body">
           {parserHealth && !parserHealth.ok && (
             <div className="banner banner--warn">
-              Parser can't find: {parserHealth.missing.join(', ')}. Open a UWorld question, then reload this panel.
+              Parser can't find: {parserHealth.missing.join(', ')}. Open a UWorld or AMBOSS question, then reload this panel.
             </div>
           )}
           {error && <div className="banner banner--err">{error}</div>}

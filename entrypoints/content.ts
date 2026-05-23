@@ -20,6 +20,50 @@ export default defineContentScript({
     }
     log('mounted', { host: location.hostname, provider: provider.name });
 
+    // NBME (starttest.com) suppresses right-click via
+    // `document.oncontextmenu = function() { … return false; }` and reasserts
+    // it from a few places. That kills our only path to the extension's
+    // context menu in their toolbar-less kiosk window. Restore it in two
+    // ways:
+    //
+    //   1. A `capture: true` `contextmenu` listener that calls
+    //      `stopImmediatePropagation()` — this prevents bubble-phase
+    //      listeners (including the inline `oncontextmenu` handler) from
+    //      running on this event, so the page never gets to `return false`.
+    //   2. Periodically null out `document.oncontextmenu` (cheap, runs on
+    //      mutations) — defensive, in case NBME re-binds it after we
+    //      started listening.
+    //
+    // Scoped to NBME only — UWorld and AMBOSS don't suppress right-click,
+    // and we shouldn't fiddle with page event handling outside of where
+    // it's actively breaking us.
+    if (provider.name === 'nbme') {
+      const restoreContextMenu = (e: Event) => {
+        e.stopImmediatePropagation();
+      };
+      window.addEventListener('contextmenu', restoreContextMenu, { capture: true });
+      try {
+        (document as unknown as { oncontextmenu: null | unknown }).oncontextmenu = null;
+        (document.body as unknown as { oncontextmenu: null | unknown }).oncontextmenu = null;
+      } catch {
+        // ignore — capture-phase listener is the real safety net
+      }
+      // NBME's scripts may rebind on later DOM updates; null out again on
+      // any mutation. The check is O(1) so this is cheap.
+      const rebindKiller = new MutationObserver(() => {
+        const d = document as unknown as { oncontextmenu: unknown };
+        if (d.oncontextmenu) d.oncontextmenu = null;
+        const b = document.body as unknown as { oncontextmenu: unknown } | null;
+        if (b && b.oncontextmenu) b.oncontextmenu = null;
+      });
+      rebindKiller.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['oncontextmenu'],
+        subtree: true,
+      });
+      log('contextmenu restored (NBME suppresses it; we override via capture listener)');
+    }
+
     const observer = provider.createObserver({
       onQuestion: (q) => {
         log('question:loaded', q.source, q.questionId ?? q.questionHash, q.choices.length, 'choices');

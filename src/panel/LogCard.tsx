@@ -28,6 +28,7 @@ import { MODEL_ID, MODEL_LABEL } from '../llm/model';
 import { draftLearningPrompt } from '../llm/prompts';
 import { useStore } from '../state/store';
 import { getQuestionByHash, upsertQuestion } from '../storage/db';
+import { saveSettings } from '../storage/settings';
 import { mapUworldSystem } from '../stepbuddy/classify';
 import { parseRule } from '../stepbuddy/parseRule';
 import {
@@ -55,6 +56,7 @@ export function LogCard() {
   const question = useStore((s) => s.question);
   const explanation = useStore((s) => s.explanation);
   const settings = useStore((s) => s.settings);
+  const setSettings = useStore((s) => s.setSettings);
   const logForm = useStore((s) => s.logForm);
   const setLogForm = useStore((s) => s.setLogForm);
   const appendLogFormRule = useStore((s) => s.appendLogFormRule);
@@ -233,10 +235,27 @@ export function LogCard() {
     }
   }
 
+  // Sticky NBME exam # editor — rendered at the top of every NBME log-card
+  // state so the student can switch forms without flipping to Settings.
+  // Persists to `chrome.storage.local` on every keystroke; `nbmeExam` is the
+  // only thing it touches in settings. Bare {section}-{question} stays
+  // useful until exam # is set, so we don't gate logging on it.
+  const nbmeExamRow = isNbme ? (
+    <NbmeExamRow
+      value={nbmeExam}
+      sectionQuestion={question.questionId ?? ''}
+      onChange={async (next) => {
+        const saved = await saveSettings({ nbmeExam: next });
+        setSettings(saved);
+      }}
+    />
+  ) : null;
+
   // Right-answer collapsed state: a single button to expand the form.
   if (wasCorrect && !logForm.open && !alreadyLogged) {
     return (
       <div className="card">
+        {nbmeExamRow}
         <div className="row">
           <div style={{ flex: 1 }}>
             <strong style={{ color: 'var(--green)' }}>Correct.</strong>{' '}
@@ -267,6 +286,7 @@ export function LogCard() {
 
   return (
     <div className="card">
+      {nbmeExamRow}
       <div className="row">
         <h3 style={{ flex: 1, margin: 0 }}>
           {wasCorrect ? 'Log learning' : 'Log this miss'}
@@ -274,9 +294,6 @@ export function LogCard() {
         {question.questionId && (
           <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
             {sourceLabel} {isNbme ? 'ID' : 'QID'} {displayId}
-            {isNbme && !nbmeExam && (
-              <> · <span style={{ color: 'var(--warn, #d2b450)' }}>set NBME exam # in Settings</span></>
-            )}
           </span>
         )}
       </div>
@@ -425,6 +442,76 @@ export function LogCard() {
           {saving ? 'Logging…' : 'Log to StepBuddy'}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inline NBME exam # picker. Lives at the top of the LogCard whenever the
+ * current question is from NBME. The exam # is sticky — it persists across
+ * sessions in `chrome.storage.local` — so the student only types it once
+ * per form, and switching forms is one keystroke instead of a Settings
+ * round-trip.
+ *
+ * The input writes to settings on every keystroke (no Save button) so the
+ * student can log immediately. We render the live preview of the final
+ * identifier (`{exam}-{section}-{question}`) right next to the input, both
+ * as confirmation that the number flowed through and as a visual prompt to
+ * fill it in when blank.
+ */
+function NbmeExamRow({
+  value,
+  sectionQuestion,
+  onChange,
+}: {
+  value: string;
+  sectionQuestion: string;
+  onChange: (next: string) => void;
+}) {
+  const trimmed = value.trim();
+  const preview = sectionQuestion
+    ? trimmed
+      ? `${trimmed}-${sectionQuestion}`
+      : sectionQuestion
+    : '';
+  return (
+    <div
+      className="row"
+      style={{
+        gap: 8,
+        alignItems: 'center',
+        padding: '6px 8px',
+        marginBottom: 8,
+        background: 'var(--bg-elev)',
+        borderRadius: 4,
+        fontSize: 12,
+      }}
+    >
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
+        <span style={{ color: 'var(--fg-dim)' }}>NBME form #</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="e.g. 11"
+          style={{ width: 60, padding: '2px 6px' }}
+          aria-label="NBME exam number"
+        />
+      </label>
+      <span style={{ flex: 1, color: 'var(--fg-dim)', textAlign: 'right' }}>
+        {preview ? (
+          <>
+            ID:{' '}
+            <strong style={{ color: trimmed ? 'var(--fg)' : 'var(--warn, #d2b450)' }}>
+              {preview}
+            </strong>
+            {!trimmed && <> · set form # first</>}
+          </>
+        ) : (
+          <em>section/question pending</em>
+        )}
+      </span>
     </div>
   );
 }

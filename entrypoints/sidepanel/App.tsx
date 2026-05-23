@@ -5,10 +5,9 @@ import { MODEL_ID, MODEL_LABEL } from '../../src/llm/model';
 import { intensePrompt } from '../../src/llm/prompts';
 import { ChatBox } from '../../src/panel/ChatBox';
 import { LogCard } from '../../src/panel/LogCard';
-import { QuestionView } from '../../src/panel/QuestionView';
 import { SettingsPanel } from '../../src/panel/SettingsPanel';
-import { SummaryControls } from '../../src/panel/SummaryControls';
 import { useStore } from '../../src/state/store';
+import type { ChatMessage } from '../../src/types';
 import {
   getQuestionByHash,
   loggedCount,
@@ -27,9 +26,9 @@ export function App() {
   const setQuestion = useStore((s) => s.setQuestion);
   const setExplanation = useStore((s) => s.setExplanation);
   const setSelectedLetter = useStore((s) => s.setSelectedLetter);
-  const setIsSummarizing = useStore((s) => s.setIsSummarizing);
-  const appendIntenseSummary = useStore((s) => s.appendIntenseSummary);
-  const setIntenseSummary = useStore((s) => s.setIntenseSummary);
+  const appendChatMessage = useStore((s) => s.appendChatMessage);
+  const updateChatMessage = useStore((s) => s.updateChatMessage);
+  const setChatStreaming = useStore((s) => s.setChatStreaming);
   const parserHealth = useStore((s) => s.parserHealth);
   const setParserHealth = useStore((s) => s.setParserHealth);
   const setLoggedCount = useStore((s) => s.setLoggedCount);
@@ -202,7 +201,11 @@ export function App() {
     })();
   }, [setParserHealth, setQuestion, setExplanation]);
 
-  // Generate the tight blaze-through summary as text only (shown on screen).
+  // Stream the tight blaze-through summary as a chat turn. There is no
+  // separate "summary" surface anymore — Summarize creates a synthetic
+  // "Summarize this question" user turn and streams the intense response
+  // into a new assistant message. Subsequent chat sends just continue the
+  // thread (the summary becomes context).
   const summarizeNow = useCallback(async () => {
     const q = useStore.getState().question;
     if (!q) {
@@ -213,14 +216,27 @@ export function App() {
       setError('Add your OpenRouter API key in Settings to summarize.');
       return;
     }
+    if (useStore.getState().chatStreaming) return;
     console.log('[ubuddy:panel] summarize: llm=', MODEL_ID);
     setError(null);
     summaryAbort.current?.abort();
-    setIntenseSummary('');
-    setIsSummarizing(true);
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: 'Summarize this question',
+    };
+    const assistantMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '',
+    };
+    appendChatMessage(userMsg);
+    appendChatMessage(assistantMsg);
+    setChatStreaming(true);
     const ctrl = new AbortController();
     summaryAbort.current = ctrl;
     const { system, user } = intensePrompt(q);
+    let acc = '';
     streamChat(
       {
         apiKey: settings.openrouterApiKey,
@@ -232,16 +248,19 @@ export function App() {
         signal: ctrl.signal,
       },
       {
-        onDelta: (chunk) => appendIntenseSummary(chunk),
-        onDone: () => setIsSummarizing(false),
+        onDelta: (chunk) => {
+          acc += chunk;
+          updateChatMessage(assistantMsg.id, acc);
+        },
+        onDone: () => setChatStreaming(false),
         onError: (err) => {
           console.error('[ubuddy:panel] summarize stream error:', err);
-          setIsSummarizing(false);
+          setChatStreaming(false);
           setError(`[${MODEL_LABEL}] ${err.message}`);
         },
       },
     );
-  }, [settings, setIsSummarizing, appendIntenseSummary, setIntenseSummary]);
+  }, [settings, appendChatMessage, updateChatMessage, setChatStreaming]);
 
   return (
     <div className="app">
@@ -277,9 +296,18 @@ export function App() {
           )}
           {/* LogCard is the headline action when graded — keep it on top. */}
           <LogCard />
-          <SummaryControls onSummarize={summarizeNow} />
-          <QuestionView />
-          {question && <ChatBox />}
+          {question ? (
+            <ChatBox onSummarize={summarizeNow} />
+          ) : (
+            <div className="card">
+              <div className="empty">
+                Open a UWorld, AMBOSS, or NBME question — UBuddy will pick it up automatically.
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--fg-dim)' }}>
+                  Not seeing one? Try refreshing the page, or clicking Previous / Next to re-trigger UBuddy.
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

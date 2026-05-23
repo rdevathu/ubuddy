@@ -7,7 +7,11 @@ import { MODEL_ID, MODEL_LABEL } from '../llm/model';
 import { chatSystemPrompt } from '../llm/prompts';
 import type { ChatMessage } from '../types';
 
-export function ChatBox() {
+interface Props {
+  onSummarize: () => void;
+}
+
+export function ChatBox({ onSummarize }: Props) {
   const settings = useStore((s) => s.settings);
   const question = useStore((s) => s.question);
   const explanation = useStore((s) => s.explanation);
@@ -78,10 +82,20 @@ export function ChatBox() {
 
   return (
     <div className="card">
-      <h3>Chat</h3>
+      <div className="row">
+        <h3 style={{ flex: 1 }}>Chat</h3>
+        <button
+          className="btn"
+          onClick={onSummarize}
+          disabled={!question || streaming}
+          title="Stream a tight blaze-through summary into the chat"
+        >
+          Summarize
+        </button>
+      </div>
       <div className="chat" ref={scrollRef}>
         {chat.length === 0 && (
-          <div className="empty">Ask anything about the question, explanation, or differential.</div>
+          <div className="empty">Ask anything about the question, explanation, or differential — or hit Summarize for a blaze-through.</div>
         )}
         {chat.map((m) => (
           <div key={m.id} className={`chat__msg chat__msg--${m.role}`}>

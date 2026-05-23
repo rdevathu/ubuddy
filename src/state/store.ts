@@ -31,8 +31,6 @@ export interface AppState {
   question: ParsedQuestion | null;
   explanation: ParsedExplanation | null;
   selectedLetter: string | null;
-  isSummarizing: boolean;
-  intenseSummary: string;
   parserHealth: { ok: boolean; missing: string[] } | null;
   logForm: LogFormState;
   chat: ChatMessage[];
@@ -52,9 +50,6 @@ export interface AppState {
   setQuestion: (q: ParsedQuestion | null) => void;
   setExplanation: (e: ParsedExplanation | null) => void;
   setSelectedLetter: (l: string | null) => void;
-  setIsSummarizing: (b: boolean) => void;
-  setIntenseSummary: (s: string) => void;
-  appendIntenseSummary: (s: string) => void;
   setParserHealth: (h: { ok: boolean; missing: string[] } | null) => void;
   setLogForm: (patch: Partial<LogFormState>) => void;
   appendLogFormRule: (s: string) => void;
@@ -81,8 +76,6 @@ export const useStore = create<AppState>((set) => ({
   question: null,
   explanation: null,
   selectedLetter: null,
-  isSummarizing: false,
-  intenseSummary: '',
   parserHealth: null,
   logForm: FRESH_LOG_FORM,
   chat: [],
@@ -100,7 +93,6 @@ export const useStore = create<AppState>((set) => ({
       question,
       explanation: null,
       selectedLetter: null,
-      intenseSummary: '',
       logForm: FRESH_LOG_FORM,
       stepbuddy: { status: 'idle' },
       chat: [],
@@ -109,9 +101,6 @@ export const useStore = create<AppState>((set) => ({
     }),
   setExplanation: (explanation) => set({ explanation }),
   setSelectedLetter: (selectedLetter) => set({ selectedLetter }),
-  setIsSummarizing: (isSummarizing) => set({ isSummarizing }),
-  setIntenseSummary: (intenseSummary) => set({ intenseSummary }),
-  appendIntenseSummary: (s) => set((state) => ({ intenseSummary: state.intenseSummary + s })),
   setParserHealth: (parserHealth) => set({ parserHealth }),
   setLogForm: (patch) => set((state) => ({ logForm: { ...state.logForm, ...patch } })),
   appendLogFormRule: (s) =>

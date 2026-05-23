@@ -119,16 +119,29 @@ export function LogCard() {
 
   const stepbuddyReady = !!settings.stepbuddyEmail && !!settings.stepbuddyPassword;
   const isAmboss = question.source === 'amboss';
-  // For AMBOSS the auto-pick is the LLM classification (defaulting to MISC
-  // while the classify call is still in flight or when no API key is set).
-  // For UWorld it's the deterministic mapping from the `.standards` block.
-  const mappedSystem: SystemTag = isAmboss
+  const isNbme = question.source === 'nbme';
+  const usesLlmClassify = isAmboss || isNbme;
+  // For AMBOSS / NBME the auto-pick is the LLM classification (defaulting
+  // to MISC while the classify call is still in flight or when no API key
+  // is set). For UWorld it's the deterministic mapping from the
+  // `.standards` block.
+  const mappedSystem: SystemTag = usesLlmClassify
     ? (classifiedSystem ?? DEFAULT_SYSTEM_TAG)
     : mapUworldSystem(explanation.system);
   const effectiveSystem: SystemTag = logForm.systemOverride ?? mappedSystem;
   const isOverridden = logForm.systemOverride !== null && logForm.systemOverride !== mappedSystem;
   const alreadyLogged = stepbuddy.status === 'logged';
-  const sourceLabel = isAmboss ? 'AMBOSS' : 'UWorld';
+  const sourceLabel = isAmboss ? 'AMBOSS' : isNbme ? 'NBME' : 'UWorld';
+  // NBME identifier folds in the sticky exam # from settings — the parser
+  // only knows {section}-{question}. Empty exam # falls back to the bare
+  // pair (still useful in the UI) with a nudge to set it.
+  const nbmeExam = (settings.nbmeExam ?? '').trim();
+  const displayId =
+    isNbme && question.questionId
+      ? nbmeExam
+        ? `${nbmeExam}-${question.questionId}`
+        : question.questionId
+      : question.questionId;
 
   const allowedMissTypes = wasCorrect
     ? (['pure_learning', ...WRONG_MISS_TYPES.filter((m) => m !== 'pure_learning')] as MissType[])
@@ -260,7 +273,10 @@ export function LogCard() {
         </h3>
         {question.questionId && (
           <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
-            {sourceLabel} QID {question.questionId}
+            {sourceLabel} {isNbme ? 'ID' : 'QID'} {displayId}
+            {isNbme && !nbmeExam && (
+              <> · <span style={{ color: 'var(--warn, #d2b450)' }}>set NBME exam # in Settings</span></>
+            )}
           </span>
         )}
       </div>
@@ -279,7 +295,7 @@ export function LogCard() {
             <option key={s} value={s}>
               {s}
               {s === mappedSystem
-                ? isAmboss
+                ? usesLlmClassify
                   ? classifiedSystem
                     ? ' (AI pick)'
                     : ''
@@ -292,9 +308,9 @@ export function LogCard() {
           {isOverridden ? (
             <>
               Overriding{' '}
-              {isAmboss ? 'AI pick' : 'UWorld’s'}{' '}
+              {usesLlmClassify ? 'AI pick' : 'UWorld’s'}{' '}
               <strong style={{ color: 'var(--fg)' }}>{mappedSystem}</strong>
-              {!isAmboss && explanation.system && (
+              {!usesLlmClassify && explanation.system && (
                 <> <span style={{ opacity: 0.7 }}>(label: {explanation.system})</span></>
               )}
               {' · '}
@@ -315,11 +331,11 @@ export function LogCard() {
                 reset
               </button>
             </>
-          ) : isAmboss ? (
+          ) : usesLlmClassify ? (
             classifying ? (
               <>Classifying system with AI…</>
             ) : classifiedSystem ? (
-              <>Auto-picked by AI (AMBOSS doesn’t expose a system label).</>
+              <>Auto-picked by AI ({sourceLabel} doesn’t expose a system label).</>
             ) : settings.openrouterApiKey ? (
               <>No classification yet — pick a system manually.</>
             ) : (

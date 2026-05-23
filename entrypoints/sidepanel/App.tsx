@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { onAny, sendToTab } from '../../src/messaging/bus';
+import { onAny, sendToAllFrames } from '../../src/messaging/bus';
 import { streamChat } from '../../src/llm/client';
 import { MODEL_ID, MODEL_LABEL } from '../../src/llm/model';
 import { intensePrompt } from '../../src/llm/prompts';
@@ -59,12 +59,13 @@ export function App() {
     if (stepbuddy.status === 'logged') loggedCount().then(setLoggedCount);
   }, [stepbuddy.status, setLoggedCount]);
 
-  // AMBOSS-only: classify the system tag in the background as soon as a
+  // AMBOSS / NBME: classify the system tag in the background as soon as a
   // question loads. UWorld doesn't need this — its `.standards` block gives
   // us the system deterministically (see classify.ts:mapUworldSystem). We
   // cache the result on the QuestionRecord so revisits skip the LLM call.
   useEffect(() => {
-    if (!question || question.source !== 'amboss') return;
+    if (!question) return;
+    if (question.source !== 'amboss' && question.source !== 'nbme') return;
     let cancelled = false;
     (async () => {
       const cached = await getQuestionByHash(question.questionHash);
@@ -87,7 +88,7 @@ export function App() {
         // panel reopen reads from cache.
         await upsertQuestion({
           questionHash: question.questionHash,
-          source: 'amboss',
+          source: question.source,
           questionId: question.questionId,
           timestamp: Date.now(),
           stem: question.stem,
@@ -100,7 +101,7 @@ export function App() {
           classifiedSystem: tag,
         });
       } catch (e) {
-        console.warn('[ubuddy:panel] amboss classify failed', e);
+        console.warn('[ubuddy:panel] classify failed', e);
       } finally {
         if (!cancelled) setClassifying(false);
       }
@@ -154,11 +155,21 @@ export function App() {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return;
       const isSupportedHost =
-        tab.url?.includes('uworld.com') || tab.url?.includes('amboss.com');
+        tab.url?.includes('uworld.com') ||
+        tab.url?.includes('amboss.com') ||
+        tab.url?.includes('starttest.com');
       if (!isSupportedHost) return;
-      const reply = (await sendToTab(tab.id, { type: 'panel:requestParse' })) as
-        | { health?: { ok: boolean; missing: string[] }; question?: any; explanation?: any }
-        | undefined;
+      type Reply = { health?: { ok: boolean; missing: string[] }; question?: any; explanation?: any };
+      const replies = (await sendToAllFrames(tab.id, { type: 'panel:requestParse' })) as
+        (Reply | undefined)[];
+      // The starttest.com tab has many same-origin iframes (Exhibit, Variable,
+      // popup helpers) — only one carries the question. Prefer the reply that
+      // actually has it; fall back to any reply with a health value so the
+      // selector-health banner can still surface.
+      const reply =
+        replies.find((r) => r && (r.question || r.explanation)) ??
+        replies.find((r) => r && r.health) ??
+        undefined;
       if (!reply) return;
       console.log('[ubuddy:panel] initial parse:', {
         health: reply.health,
@@ -234,7 +245,7 @@ export function App() {
         <div className="body">
           {parserHealth && !parserHealth.ok && (
             <div className="banner banner--warn">
-              Parser can't find: {parserHealth.missing.join(', ')}. Open a UWorld or AMBOSS question, then reload this panel.
+              Parser can't find: {parserHealth.missing.join(', ')}. Open a UWorld, AMBOSS, or NBME question, then reload this panel.
             </div>
           )}
           {error && <div className="banner banner--err">{error}</div>}

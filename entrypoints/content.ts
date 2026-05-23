@@ -2,7 +2,12 @@ import { onAny, send } from '../src/messaging/bus';
 import { providerForHost } from '../src/providers';
 
 export default defineContentScript({
-  matches: ['*://*.uworld.com/*', '*://*.amboss.com/*'],
+  matches: ['*://*.uworld.com/*', '*://*.amboss.com/*', '*://*.starttest.com/*'],
+  // NBME loads its question inside an iframe (`ElementDisplayFrame` →
+  // itd.aspx) — without `allFrames` we'd never see `.ITSStem`. UWorld and
+  // AMBOSS render in the top frame; if we ever get injected into a stray
+  // helper iframe the parser simply finds no stem and stays silent.
+  allFrames: true,
   runAt: 'document_idle',
   main() {
     const log = (...args: unknown[]) =>

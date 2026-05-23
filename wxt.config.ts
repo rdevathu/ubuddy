@@ -11,7 +11,17 @@ export default defineConfig({
     // `webNavigation` is needed so the panel can enumerate the iframes of the
     // active tab and dispatch `panel:requestParse` into the NBME question
     // frame (which is a child of starttest.com, not the top doc).
-    permissions: ['storage', 'sidePanel', 'activeTab', 'scripting', 'webNavigation'],
+    // `contextMenus` powers a right-click → "Open UBuddy panel" entry —
+    // the only way to reach the side panel from NBME's toolbar-less kiosk
+    // window, where the extension action icon isn't visible.
+    permissions: [
+      'storage',
+      'sidePanel',
+      'activeTab',
+      'scripting',
+      'webNavigation',
+      'contextMenus',
+    ],
     host_permissions: [
       '*://*.uworld.com/*',
       '*://*.amboss.com/*',

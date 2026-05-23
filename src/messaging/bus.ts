@@ -1,8 +1,22 @@
 import type { RuntimeMessage, RuntimeMessageOf, RuntimeMessageType } from './types';
 
+/**
+ * Broadcast a message to whatever extension context is listening (typically
+ * the side panel). `browser.runtime.sendMessage` rejects with "Could not
+ * establish connection. Receiving end does not exist." when nothing is
+ * listening — completely expected for our fire-and-forget broadcasts (the
+ * content script announces `question:loaded` whether or not the panel is
+ * open). Silence that one and only that one; surface anything else as a
+ * warning since it implies a real bug.
+ */
+const NO_RECEIVER_RE = /Receiving end does not exist|Could not establish connection/i;
+
 export function send(message: RuntimeMessage): Promise<unknown> {
   return browser.runtime.sendMessage(message).catch((err) => {
-    console.warn('[ubuddy] send failed', message.type, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!NO_RECEIVER_RE.test(msg)) {
+      console.warn('[ubuddy] send failed', message.type, err);
+    }
     return undefined;
   });
 }

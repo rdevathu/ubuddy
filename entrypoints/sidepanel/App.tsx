@@ -150,9 +150,29 @@ export function App() {
   // Pull parse state when the panel opens (handles the "panel opened after
   // question already on screen" case). Does NOT broadcast — the content script
   // returns the data directly to avoid feedback loops.
+  //
+  // Tab resolution: when the floating-window fallback is used (NBME's kiosk
+  // window, where the side panel can't render — see background.ts), the
+  // opener stashes the source tabId in the URL hash as `#tab=<id>`. Without
+  // that, `tabs.query({active:true,currentWindow:true})` from inside the
+  // floater would resolve to the floater's own (irrelevant) tab. When the
+  // panel is hosted in a normal Chrome window's side-panel chrome, no hash
+  // is set and we fall back to the active-tab query as before.
   useEffect(() => {
     (async () => {
-      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      let tab: { id?: number; url?: string } | undefined;
+      const hashTabIdMatch = window.location.hash.match(/[#&]tab=(\d+)/);
+      const hashTabId = hashTabIdMatch ? Number(hashTabIdMatch[1]) : NaN;
+      if (Number.isFinite(hashTabId)) {
+        try {
+          tab = await browser.tabs.get(hashTabId);
+        } catch (e) {
+          console.warn('[ubuddy:panel] hash-pinned tab lookup failed', e);
+        }
+      }
+      if (!tab) {
+        [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      }
       if (!tab?.id) return;
       const isSupportedHost =
         tab.url?.includes('uworld.com') ||

@@ -1,10 +1,11 @@
 /**
  * Which question bank this parse came from. Drives the StepBuddy `p_source`
- * value, the per-source identifier shape, and (for AMBOSS) whether the LLM
- * needs to classify the system — UWorld's `.standards` block gives us the
- * system deterministically; AMBOSS exposes nothing equivalent.
+ * value, the per-source identifier shape, and (for AMBOSS / NBME) whether
+ * the LLM needs to classify the system — UWorld's `.standards` block gives
+ * us the system deterministically; AMBOSS and NBME expose nothing
+ * equivalent.
  */
-export type QuestionSource = 'uworld' | 'amboss';
+export type QuestionSource = 'uworld' | 'amboss' | 'nbme';
 
 export interface AnswerChoice {
   letter: string;
@@ -72,9 +73,10 @@ export interface QuestionRecord {
   /** The student's own takeaway — the rule sent to StepBuddy on log. */
   rule?: string;
   /**
-   * LLM-classified `SystemTag` cached per question. Only populated for AMBOSS
-   * (UWorld is deterministic via `.standards`). Re-used when the user logs so
-   * we don't burn tokens on a second classify if they revisit a question.
+   * LLM-classified `SystemTag` cached per question. Populated for AMBOSS
+   * and NBME (UWorld is deterministic via `.standards`). Re-used when the
+   * user logs so we don't burn tokens on a second classify if they revisit
+   * a question.
    */
   classifiedSystem?: string;
   /**
@@ -91,10 +93,18 @@ export interface AppSettings {
   openrouterApiKey: string;
   stepbuddyEmail: string;
   stepbuddyPassword: string;
+  /**
+   * Which NBME exam the student is currently reviewing (e.g. "11" for
+   * "NBME 11"). Sticky across sessions — the NBME page itself doesn't
+   * expose this, so the user sets it once and we reuse it to assemble the
+   * `{exam}-{section}-{question}` identifier sent to StepBuddy.
+   */
+  nbmeExam: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   openrouterApiKey: '',
   stepbuddyEmail: '',
   stepbuddyPassword: '',
+  nbmeExam: '',
 };

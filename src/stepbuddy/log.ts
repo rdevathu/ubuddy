@@ -59,14 +59,14 @@ export interface LogOpts {
   missType: MissType;
   /**
    * Manual system_tag override. When provided, wins over both the
-   * deterministic UWorld mapping and the AMBOSS LLM classification — escape
-   * hatch for when the student disagrees with the auto-pick.
+   * deterministic UWorld mapping and the AMBOSS / NBME LLM classification —
+   * escape hatch for when the student disagrees with the auto-pick.
    */
   systemOverride?: SystemTag | null;
   /**
-   * LLM-classified system tag for AMBOSS questions (UWorld leaves this null
-   * — its system comes from `.standards`). Wins over the deterministic
-   * mapping when present and no manual override is set.
+   * LLM-classified system tag for AMBOSS / NBME questions (UWorld leaves
+   * this null — its system comes from `.standards`). Wins over the
+   * deterministic mapping when present and no manual override is set.
    */
   classifiedSystem?: SystemTag | null;
 }
@@ -91,22 +91,35 @@ export async function logToStepBuddy(opts: LogOpts): Promise<LogResult> {
   inFlight.add(hash);
 
   try {
-    // System tag priority: manual override → AMBOSS LLM classification →
-    // UWorld's `.standards` map (returns MISC when absent). Source comes
-    // from the question's provider.
+    // System tag priority: manual override → AMBOSS / NBME LLM
+    // classification → UWorld's `.standards` map (returns MISC when absent).
+    // Source comes from the question's provider.
+    const usesLlmClassify = question.source === 'amboss' || question.source === 'nbme';
     const system_tag: SystemTag =
       systemOverride ??
-      (question.source === 'amboss'
+      (usesLlmClassify
         ? (classifiedSystem ?? DEFAULT_SYSTEM_TAG)
         : mapUworldSystem(explanation.system));
-    const source: Source = question.source === 'amboss' ? 'AMBOSS' : 'UWorld';
+    const source: Source =
+      question.source === 'amboss' ? 'AMBOSS' : question.source === 'nbme' ? 'NBME' : 'UWorld';
+
+    // NBME identifier shape is `{exam}-{section}-{question}`. The parser
+    // only knows `{section}-{question}` (the exam # isn't in the page DOM —
+    // it's sticky in settings), so we prepend it here. If the user hasn't
+    // set the exam # yet, fall back to whatever the parser produced.
+    let identifier = question.questionId;
+    if (question.source === 'nbme' && identifier) {
+      const exam = (opts.settings.nbmeExam ?? '').trim();
+      if (exam) identifier = `${exam}-${identifier}`;
+    }
+
     const id = await logMistake({
       p_date: todayLocal(),
       p_source: source,
       p_system_tag: system_tag,
       p_rule: trimmedRule,
       p_miss_type: missType,
-      p_identifier: question.questionId?.slice(0, 80),
+      p_identifier: identifier?.slice(0, 80),
       p_source_other: null,
       p_tags: tags && tags.length ? tags.slice(0, 20) : [],
       p_anki_card_made: false,

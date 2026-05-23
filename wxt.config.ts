@@ -6,12 +6,16 @@ export default defineConfig({
   outDir: 'dist',
   manifest: {
     name: 'UBuddy',
-    description: 'AI study companion for UWorld and AMBOSS Step 2 CK questions',
+    description: 'AI study companion for UWorld, AMBOSS, and NBME Step 2 CK questions',
     // version is taken from package.json by WXT — keep it bumped there.
-    permissions: ['storage', 'sidePanel', 'activeTab', 'scripting'],
+    // `webNavigation` is needed so the panel can enumerate the iframes of the
+    // active tab and dispatch `panel:requestParse` into the NBME question
+    // frame (which is a child of starttest.com, not the top doc).
+    permissions: ['storage', 'sidePanel', 'activeTab', 'scripting', 'webNavigation'],
     host_permissions: [
       '*://*.uworld.com/*',
       '*://*.amboss.com/*',
+      '*://*.starttest.com/*',
       'https://dlivcxwafmssxwebzccb.supabase.co/*',
     ],
     action: {

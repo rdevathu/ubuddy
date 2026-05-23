@@ -80,6 +80,26 @@ export function SettingsPanel() {
       </div>
 
       <div className="card">
+        <h3>NBME</h3>
+        <label>
+          Current exam #
+          <input
+            type="text"
+            inputMode="numeric"
+            value={draft.nbmeExam}
+            onChange={(e) => update('nbmeExam', e.target.value)}
+            placeholder="e.g. 11"
+          />
+        </label>
+        <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+          Sticky — UBuddy prepends this to <code>{'{section}-{question}'}</code>{' '}
+          when logging NBME items (e.g. <code>11-2-5</code>). Change it when you
+          switch to a different NBME form. NBME pages don't expose the exam #
+          themselves.
+        </div>
+      </div>
+
+      <div className="card">
         <h3>StepBuddy</h3>
         <label>
           Email

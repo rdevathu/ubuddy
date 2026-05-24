@@ -40,6 +40,21 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const summaryAbort = useRef<AbortController | null>(null);
 
+  // When the question changes, kill any in-flight LLM stream from the prior
+  // question — otherwise its onDelta keeps firing into a cleared chat and
+  // its onDone races with the new stream-start to flip chatStreaming. The
+  // store already clears chat + chatStreaming inside setQuestion; this just
+  // stops the underlying fetch so we don't waste tokens or flicker the UI.
+  // Key Points exposed this because its stream is several times longer than
+  // Summarize's — Summarize used to "win the race" by finishing before the
+  // user advanced. Key Points routinely doesn't.
+  useEffect(() => {
+    return () => {
+      summaryAbort.current?.abort();
+      summaryAbort.current = null;
+    };
+  }, [question?.questionHash]);
+
   useEffect(() => {
     console.log('[ubuddy:panel] mount');
     loadSettings().then((s) => {

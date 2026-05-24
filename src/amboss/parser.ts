@@ -119,8 +119,16 @@ function rowTheme(row: Element):
 export type AmbossState = 'pre' | 'peri' | 'post';
 
 export function detectState(): AmbossState {
-  if (queryFirst(document, AMBOSS_SELECTORS.correctBadge)) return 'post';
-  if (queryFirst(document, AMBOSS_SELECTORS.incorrectBadge)) return 'peri';
+  // Scope to the live choice list — querying the whole document let stale
+  // badges from the previous question's DOM (still mounted during AMBOSS's
+  // question transition) make us misread a brand-new unanswered question as
+  // 'post'. That fired a junk parseExplanation, which set the panel's
+  // `explanation` for the new question and re-triggered LogCard's "already
+  // logged" lookup against whatever record happened to share the hash.
+  const choiceList = findChoiceList();
+  if (!choiceList) return 'pre';
+  if (queryFirst(choiceList, AMBOSS_SELECTORS.correctBadge)) return 'post';
+  if (queryFirst(choiceList, AMBOSS_SELECTORS.incorrectBadge)) return 'peri';
   return 'pre';
 }
 
@@ -253,6 +261,11 @@ export function parseExplanation(
   // want to fire — the student knows they missed and wants the LogCard. The
   // correct letter will be filled in on a later scan when they hit post.
   if (state === 'peri' && !firstWrongLetter) return null;
+  // Belt-and-suspenders: if `detectState` says post but no row in the live
+  // choice list carries the correct theme, the DOM is in a transitional
+  // state — bail rather than emit a half-empty explanation that re-opens
+  // the LogCard on a question that hasn't actually been graded.
+  if (state === 'post' && !correctLetter) return null;
 
   const userLetter = firstWrongLetter ?? firstTryCorrectLetter;
   const wasCorrect = state === 'post' && !firstWrongLetter && !!firstTryCorrectLetter;

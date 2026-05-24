@@ -9,16 +9,31 @@ import type { RuntimeMessage, RuntimeMessageOf, RuntimeMessageType } from './typ
  * open). Silence that one and only that one; surface anything else as a
  * warning since it implies a real bug.
  */
-const NO_RECEIVER_RE = /Receiving end does not exist|Could not establish connection/i;
+const NO_RECEIVER_RE = /Receiving end does not exist|Could not establish connection|Extension context invalidated/i;
 
 export function send(message: RuntimeMessage): Promise<unknown> {
-  return browser.runtime.sendMessage(message).catch((err) => {
+  // When the extension is reloaded at chrome://extensions, the runtime
+  // binding in already-injected content scripts is severed; the MV3 host
+  // tab can't be re-injected without a navigation, so its MutationObserver
+  // keeps firing into a dead context. Bail out quietly — refreshing the
+  // tab is the only real fix and the user will hit it on their own.
+  if (!browser.runtime?.id) return Promise.resolve(undefined);
+  try {
+    return browser.runtime.sendMessage(message).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!NO_RECEIVER_RE.test(msg)) {
+        console.warn('[ubuddy] send failed', message.type, err);
+      }
+      return undefined;
+    });
+  } catch (err) {
+    // Some Chrome builds throw synchronously when the context is dead.
     const msg = err instanceof Error ? err.message : String(err);
     if (!NO_RECEIVER_RE.test(msg)) {
       console.warn('[ubuddy] send failed', message.type, err);
     }
-    return undefined;
-  });
+    return Promise.resolve(undefined);
+  }
 }
 
 export async function sendToTab(tabId: number, message: RuntimeMessage): Promise<unknown> {

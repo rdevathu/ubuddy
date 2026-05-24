@@ -261,11 +261,6 @@ export function parseExplanation(
   // want to fire — the student knows they missed and wants the LogCard. The
   // correct letter will be filled in on a later scan when they hit post.
   if (state === 'peri' && !firstWrongLetter) return null;
-  // Belt-and-suspenders: if `detectState` says post but no row in the live
-  // choice list carries the correct theme, the DOM is in a transitional
-  // state — bail rather than emit a half-empty explanation that re-opens
-  // the LogCard on a question that hasn't actually been graded.
-  if (state === 'post' && !correctLetter) return null;
 
   const userLetter = firstWrongLetter ?? firstTryCorrectLetter;
   const wasCorrect = state === 'post' && !firstWrongLetter && !!firstTryCorrectLetter;

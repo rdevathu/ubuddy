@@ -87,7 +87,11 @@ export const useStore = create<AppState>((set) => ({
 
   setSettings: (settings) => set({ settings }),
   // Opening a new question wipes per-question scratch state. Chat resets too —
-  // the previous question's transcript is irrelevant.
+  // the previous question's transcript is irrelevant. chatStreaming is forced
+  // false alongside; without it, an in-flight stream from the prior question
+  // would leave the UI stuck in "streaming" state (Stop button shown,
+  // Summarize/Key Points disabled) until the old request happened to finish.
+  // The actual stream is aborted by App.tsx on the same question-change tick.
   setQuestion: (question) =>
     set({
       question,
@@ -96,6 +100,7 @@ export const useStore = create<AppState>((set) => ({
       logForm: FRESH_LOG_FORM,
       stepbuddy: { status: 'idle' },
       chat: [],
+      chatStreaming: false,
       classifiedSystem: null,
       classifying: false,
     }),

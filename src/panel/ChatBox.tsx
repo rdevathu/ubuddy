@@ -9,9 +9,10 @@ import type { ChatMessage } from '../types';
 
 interface Props {
   onSummarize: () => void;
+  onKeyPoints: () => void;
 }
 
-export function ChatBox({ onSummarize }: Props) {
+export function ChatBox({ onSummarize, onKeyPoints }: Props) {
   const settings = useStore((s) => s.settings);
   const question = useStore((s) => s.question);
   const explanation = useStore((s) => s.explanation);
@@ -86,6 +87,14 @@ export function ChatBox({ onSummarize }: Props) {
         <h3 style={{ flex: 1 }}>Chat</h3>
         <button
           className="btn"
+          onClick={onKeyPoints}
+          disabled={!question || streaming}
+          title="Bullet-format key points from the stem — first bullet is identifying info"
+        >
+          Key Points
+        </button>
+        <button
+          className="btn"
           onClick={onSummarize}
           disabled={!question || streaming}
           title="Stream a tight blaze-through summary into the chat"
@@ -95,7 +104,7 @@ export function ChatBox({ onSummarize }: Props) {
       </div>
       <div className="chat" ref={scrollRef}>
         {chat.length === 0 && (
-          <div className="empty">Ask anything about the question, explanation, or differential — or hit Summarize for a blaze-through.</div>
+          <div className="empty">Ask anything about the question, explanation, or differential — or hit Key Points for the stem in bullets, Summarize for a blaze-through.</div>
         )}
         {chat.map((m) => (
           <div key={m.id} className={`chat__msg chat__msg--${m.role}`}>

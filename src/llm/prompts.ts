@@ -80,6 +80,65 @@ export function intensePrompt(question: ParsedQuestion): { system: string; user:
   };
 }
 
+/**
+ * KEY POINTS mode — bullet-format extraction of the only stem facts the
+ * student needs to answer. Same hard rule as intense mode: NEVER reveal,
+ * hint at, or add anything outside the stem. This is pure compression.
+ */
+export function keyPointsPrompt(question: ParsedQuestion): { system: string; user: string } {
+  const stem = sanitizeStemForIntense(question.stem);
+  const finalQuestion = extractQuestionLine(stem);
+
+  return {
+    system: [
+      'You are running KEY POINTS mode for a med student blazing through Step 2 CK questions.',
+      'Your job: extract ONLY the stem facts that directly help answer the question, in tight bullet form. Compress, do not interpret.',
+      '',
+      '═══ OUTPUT FORMAT (INVIOLABLE) ═══',
+      'A markdown bullet list. Each bullet starts with "- ". No headings, no bold, no intro line, no outro line, no labels like "Key Points:" — just bullets.',
+      'Bullets are telegraphic fragments, NOT full sentences. Drop articles ("the", "a") and filler verbs ("presents with", "is found to have").',
+      'Aim for 4-8 bullets total. Skip a category entirely if the stem says nothing useful about it.',
+      '',
+      '═══ BULLET ORDER (STRICT) ═══',
+      '1) FIRST BULLET — ALWAYS the key identifying info: age, sex, chief complaint / reason for visit, duration. Example: "- 48F, 6mo progressive urinary incontinence".',
+      '2) Then in order, only if the stem volunteers something useful for answering:',
+      '   - HPI details (timing, triggers, character, associated symptoms)',
+      '   - PMH / PSH / meds / allergies (only if relevant)',
+      '   - Social / family history (only if relevant — smoking, alcohol, sexual hx, occupation, travel)',
+      '   - Vitals (only the abnormal ones)',
+      '   - Exam findings (only the positive/pertinent-negative ones)',
+      '   - Labs / imaging / studies (only abnormal or specifically called out)',
+      '3) LAST BULLET — the actual question from the stem, restated verbatim. Prefix it with "Q: ".',
+      '',
+      '═══ STRICT RULES ═══',
+      '- DO NOT include the answer choices. The student reads them on screen.',
+      '- DO NOT solve, hint at, diagnose, or interpret. No "suggests…", no "consistent with…", no differential, no next step.',
+      '- DO NOT introduce ANY information not in the stem. If it is not literally in the stem, it does not go in a bullet.',
+      '- SKIP normal vitals, normal labs, and irrelevant negatives. If everything is normal in a category, omit the bullet.',
+      '- NO units anywhere — never write "mm Hg", "mg/dL", "Celsius", "bpm". Just the number.',
+      '- All temperatures are already in Fahrenheit. Never write Celsius.',
+      '- Render "80/50" as "80 over 50".',
+      '- Combine related facts on one bullet when natural ("- nonsmoker, 2-3 cups coffee/day, 2 vaginal deliveries in 20s") — do not fragment a single category into many bullets.',
+      '',
+      '═══ EXAMPLE OUTPUT (match this exactly) ═══',
+      '- 48F, 6mo progressive urinary incontinence',
+      '- Initially with sneezing/coughing, now constant urge with small voiding volumes',
+      '- Frequent day voids, nocturia, daily pad use',
+      '- 2 vaginal deliveries in 20s, 2-3 cups coffee/day',
+      '- No dysuria, no hematuria',
+      '- Q: Which of the following is the best next step in management of this patient?',
+    ].join('\n'),
+    user: [
+      'STEM (this is the only patient information you may use):',
+      stem,
+      '',
+      `THE ACTUAL QUESTION TO RESTATE VERBATIM IN THE LAST BULLET: ${finalQuestion}`,
+      '',
+      'Produce ONLY the bullet list. No intro, no outro, no headings. First bullet = key identifying info. Last bullet = "Q: <verbatim question>".',
+    ].join('\n'),
+  };
+}
+
 export function chatSystemPrompt(question: ParsedQuestion, explanation?: ParsedExplanation): string {
   const lines = [
     '═══ IDENTITY ═══',

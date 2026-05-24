@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAny, sendToAllFrames } from '../../src/messaging/bus';
 import { streamChat } from '../../src/llm/client';
 import { MODEL_ID, MODEL_LABEL } from '../../src/llm/model';
-import { intensePrompt } from '../../src/llm/prompts';
+import { intensePrompt, keyPointsPrompt } from '../../src/llm/prompts';
 import { ChatBox } from '../../src/panel/ChatBox';
 import { LogCard } from '../../src/panel/LogCard';
 import { SettingsPanel } from '../../src/panel/SettingsPanel';
@@ -262,6 +262,65 @@ export function App() {
     );
   }, [settings, appendChatMessage, updateChatMessage, setChatStreaming]);
 
+  // Stream the Key Points bullet list as a chat turn, same plumbing as
+  // summarize — distinct synthetic user turn so the bullets become context
+  // for any follow-up chat.
+  const keyPointsNow = useCallback(async () => {
+    const q = useStore.getState().question;
+    if (!q) {
+      console.warn('[ubuddy:panel] keyPoints: no question loaded');
+      return;
+    }
+    if (!settings.openrouterApiKey) {
+      setError('Add your OpenRouter API key in Settings to extract key points.');
+      return;
+    }
+    if (useStore.getState().chatStreaming) return;
+    console.log('[ubuddy:panel] keyPoints: llm=', MODEL_ID);
+    setError(null);
+    summaryAbort.current?.abort();
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: 'Key points from the stem',
+    };
+    const assistantMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '',
+    };
+    appendChatMessage(userMsg);
+    appendChatMessage(assistantMsg);
+    setChatStreaming(true);
+    const ctrl = new AbortController();
+    summaryAbort.current = ctrl;
+    const { system, user } = keyPointsPrompt(q);
+    let acc = '';
+    streamChat(
+      {
+        apiKey: settings.openrouterApiKey,
+        model: MODEL_ID,
+        messages: [
+          { id: 'sys', role: 'system', content: system },
+          { id: 'u', role: 'user', content: user },
+        ],
+        signal: ctrl.signal,
+      },
+      {
+        onDelta: (chunk) => {
+          acc += chunk;
+          updateChatMessage(assistantMsg.id, acc);
+        },
+        onDone: () => setChatStreaming(false),
+        onError: (err) => {
+          console.error('[ubuddy:panel] keyPoints stream error:', err);
+          setChatStreaming(false);
+          setError(`[${MODEL_LABEL}] ${err.message}`);
+        },
+      },
+    );
+  }, [settings, appendChatMessage, updateChatMessage, setChatStreaming]);
+
   return (
     <div className="app">
       <div className="app__header">
@@ -297,7 +356,7 @@ export function App() {
           {/* LogCard is the headline action when graded — keep it on top. */}
           <LogCard />
           {question ? (
-            <ChatBox onSummarize={summarizeNow} />
+            <ChatBox onSummarize={summarizeNow} onKeyPoints={keyPointsNow} />
           ) : (
             <div className="card">
               <div className="empty">

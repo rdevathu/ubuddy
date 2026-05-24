@@ -9,7 +9,7 @@ export default defineContentScript({
   // helper iframe the parser simply finds no stem and stays silent.
   allFrames: true,
   runAt: 'document_idle',
-  main() {
+  main(ctx) {
     const log = (...args: unknown[]) =>
       console.log('[ubuddy:content]', ...args);
 
@@ -75,6 +75,15 @@ export default defineContentScript({
       },
     });
     observer.start();
+
+    // When the extension is reloaded at chrome://extensions, this content
+    // script is orphaned in the page (Chrome can't re-inject into an
+    // already-loaded tab). Stop the MutationObserver so it isn't churning
+    // parse work into a dead runtime until the tab gets refreshed.
+    ctx.onInvalidated(() => {
+      log('context invalidated — stopping observer');
+      observer.stop();
+    });
 
     onAny((msg) => {
       if (msg.type === 'panel:requestParse') {

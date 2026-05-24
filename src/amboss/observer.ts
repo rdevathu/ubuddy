@@ -71,22 +71,20 @@ export class AmbossObserver {
     const parsed = parseQuestion();
     if (!parsed) return;
 
-    // QID-first identity, with a hash cross-check. AMBOSS's notes-editor id
-    // is stable per question across all three states AND the stem text is
-    // invariant across states (only the choice themes flip), so a real same
-    // question keeps BOTH stable. If the QID matches but the stem hash
-    // doesn't, the QID is a leftover from the previous question's DOM still
-    // mounted during a transition — distrust the match and treat this as a
-    // new question. Before this, an in-flight AMBOSS transition could leave
-    // the panel showing the previous question's "logged" state on the next
-    // question, since onQuestion never fired and state never reset. UWorld
-    // does NOT get the same rule: its stem hash flips on the post-grade
-    // rerender for the same question, so its observer continues to lean on
-    // the QID alone.
+    // QID-first identity. AMBOSS's notes-editor id is stable per question
+    // across all three states; only when it really changes (new question
+    // loaded in the session) do we wipe per-question state. Hash fallback
+    // covers the unlikely case where the notes button hasn't mounted yet.
+    //
+    // Earlier we tried also cross-checking the stem hash here on AMBOSS,
+    // but the actual stem text in `section[aria-label="Question Text"]`
+    // shifts by a couple of whitespace chars between pre and peri/post
+    // (verified against captures), so the hash flips on every grade for
+    // the SAME question. Cross-checking made the observer treat every
+    // grade as a brand-new question, which wiped `explanation` and
+    // suppressed the LogCard. Stick with QID alone.
     const sameQuestion =
-      (!!parsed.questionId &&
-        parsed.questionId === this.currentQuestionId &&
-        parsed.questionHash === this.currentHash) ||
+      (!!parsed.questionId && parsed.questionId === this.currentQuestionId) ||
       (!parsed.questionId && parsed.questionHash === this.currentHash);
 
     if (!sameQuestion) {

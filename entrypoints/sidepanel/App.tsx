@@ -162,8 +162,21 @@ export function App() {
   }, [setQuestion, setExplanation, setSelectedLetter]);
 
   // Pull parse state when the panel opens (handles the "panel opened after
-  // question already on screen" case). Does NOT broadcast — the content script
-  // returns the data directly to avoid feedback loops.
+  // question already on screen" case) AND every time the panel becomes
+  // visible / focused again. The latter is the recovery hatch for the
+  // "advance the question while the panel was elsewhere" case: AMBOSS can
+  // fire its DOM transition (and the observer's `question:loaded`
+  // broadcast) while the side panel is hidden or the user is on another
+  // tab. The runtime drops sendMessage to a closed/hidden receiver, the
+  // panel never sees `question:loaded`, and the old question's state
+  // (including the green "Logged to StepBuddy" banner) sits there on top
+  // of a brand-new unanswered question. Re-pulling on focus reconciles.
+  //
+  // The pull is no-op when nothing changed: we only overwrite store state
+  // when the parsed question identity (QID, falling back to hash) actually
+  // differs from what's in the store, so a re-pull while the student is
+  // mid-LogCard on the same question doesn't wipe their in-progress
+  // takeaway.
   //
   // Tab resolution: when the floating-window fallback is used (NBME's kiosk
   // window, where the side panel can't render — see background.ts), the
@@ -173,7 +186,8 @@ export function App() {
   // panel is hosted in a normal Chrome window's side-panel chrome, no hash
   // is set and we fall back to the active-tab query as before.
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    const pull = async (trigger: string) => {
       let tab: { id?: number; url?: string } | undefined;
       const hashTabIdMatch = window.location.hash.match(/[#&]tab=(\d+)/);
       const hashTabId = hashTabIdMatch ? Number(hashTabIdMatch[1]) : NaN;
@@ -187,7 +201,7 @@ export function App() {
       if (!tab) {
         [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       }
-      if (!tab?.id) return;
+      if (cancelled || !tab?.id) return;
       const isSupportedHost =
         tab.url?.includes('uworld.com') ||
         tab.url?.includes('amboss.com') ||
@@ -196,6 +210,7 @@ export function App() {
       type Reply = { health?: { ok: boolean; missing: string[] }; question?: any; explanation?: any };
       const replies = (await sendToAllFrames(tab.id, { type: 'panel:requestParse' })) as
         (Reply | undefined)[];
+      if (cancelled) return;
       // The starttest.com tab has many same-origin iframes (Exhibit, Variable,
       // popup helpers) — only one carries the question. Prefer the reply that
       // actually has it; fall back to any reply with a health value so the
@@ -205,15 +220,44 @@ export function App() {
         replies.find((r) => r && r.health) ??
         undefined;
       if (!reply) return;
-      console.log('[ubuddy:panel] initial parse:', {
+      console.log('[ubuddy:panel] pull(', trigger, '):', {
         health: reply.health,
         hasQuestion: !!reply.question,
         hasExplanation: !!reply.explanation,
       });
       if (reply.health) setParserHealth(reply.health);
-      if (reply.question && !useStore.getState().question) setQuestion(reply.question);
-      if (reply.explanation && !useStore.getState().explanation) setExplanation(reply.explanation);
-    })();
+      if (reply.question) {
+        const cur = useStore.getState().question;
+        // Identity: QID match wins (stable across AMBOSS pre→peri→post and
+        // UWorld's post-grade rerender). Falls back to hash when no QID.
+        const same =
+          (reply.question.questionId &&
+            cur?.questionId &&
+            reply.question.questionId === cur.questionId) ||
+          (!reply.question.questionId &&
+            !cur?.questionId &&
+            reply.question.questionHash === cur?.questionHash);
+        if (!cur || !same) {
+          console.log('[ubuddy:panel] pull: replacing question (trigger=' + trigger + ')');
+          setQuestion(reply.question);
+        }
+      }
+      if (reply.explanation && !useStore.getState().explanation) {
+        setExplanation(reply.explanation);
+      }
+    };
+    pull('mount');
+    const onVis = () => {
+      if (document.visibilityState === 'visible') pull('visibility');
+    };
+    const onFocus = () => pull('focus');
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [setParserHealth, setQuestion, setExplanation]);
 
   // Stream the tight blaze-through summary as a chat turn. There is no

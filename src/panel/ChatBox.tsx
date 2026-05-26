@@ -82,7 +82,7 @@ export function ChatBox({ onSummarize, onKeyPoints }: Props) {
   }
 
   return (
-    <div className="card">
+    <div className="card card--grow">
       <div className="row">
         <h3 style={{ flex: 1 }}>Chat</h3>
         <button

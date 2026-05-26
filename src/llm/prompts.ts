@@ -1,4 +1,4 @@
-import type { ParsedExplanation, ParsedQuestion } from '../types';
+import type { ChatMessage, ParsedExplanation, ParsedQuestion } from '../types';
 
 /**
  * Strip anything that even smells like the answer or rationale. The intense
@@ -246,37 +246,98 @@ export function classifySystemPrompt(
 }
 
 /**
+ * Trim the in-panel chat transcript down to something safe to inline into the
+ * auto-draft prompt. Drops empty messages (e.g. an in-flight assistant
+ * placeholder), formats each turn as `Student:` / `Tutor:`, and truncates from
+ * the OLDEST end if the total runs long — the recent exchanges are the ones
+ * that reflect what the student is still trying to pin down.
+ */
+function formatChatForDraft(chat: ChatMessage[] | undefined): string | null {
+  if (!chat || chat.length === 0) return null;
+  const turns: string[] = [];
+  for (const m of chat) {
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    const text = m.content.trim();
+    if (!text) continue;
+    const label = m.role === 'user' ? 'Student' : 'Tutor';
+    turns.push(`${label}: ${text}`);
+  }
+  if (turns.length === 0) return null;
+  const MAX_CHARS = 3500;
+  let total = 0;
+  const kept: string[] = [];
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (total + t.length + 2 > MAX_CHARS) break;
+    kept.unshift(t);
+    total += t.length + 2;
+  }
+  if (kept.length === 0) {
+    // Single turn already exceeds the budget — keep its tail.
+    kept.push(turns[turns.length - 1].slice(-MAX_CHARS));
+  }
+  return kept.join('\n\n');
+}
+
+/**
  * Boil the official explanation + stem down to a 2-4 sentence learning rule
  * the student can stash in StepBuddy. Used by the "Auto-draft" button on the
  * log card — the student then edits before saving.
+ *
+ * If the student has been chatting about this question, that transcript is
+ * threaded in as a *signal of confusion / interest* — the model is told to
+ * weight concepts the student probed into, NOT to summarize the chat. The
+ * takeaway still leads with the high-yield rule from the explanation.
  */
 export function draftLearningPrompt(
   question: ParsedQuestion,
   explanation: ParsedExplanation,
+  chat?: ChatMessage[],
 ): { system: string; user: string } {
+  const chatBlock = formatChatForDraft(chat);
+  const systemLines = [
+    'You boil a med student\'s board question + its official explanation down to the takeaway they should remember.',
+    'Output ONE block of 2-4 short sentences in plain prose. No markdown, no labels, no headings, no bullets.',
+    'Lead with the high-yield rule. Then briefly state when/why it applies. No "the answer is…", no choice letters.',
+    'Be specific to the medical fact — generic platitudes are useless ("always consider the differential" → bad).',
+    'Cap at ~280 characters. Imperative voice is fine ("In a patient with X, do Y because Z.").',
+  ];
+  if (chatBlock) {
+    systemLines.push(
+      '',
+      '═══ CHAT CONTEXT (if present) ═══',
+      'The student has been chatting with a tutor about this question. Treat that transcript as a SIGNAL of what they found confusing or wanted to understand better — NOT as content to summarize.',
+      'Your takeaway is still primarily the high-yield rule from the explanation. But:',
+      '- If the chat shows the student wrestling with a specific concept/discriminator/comparison, make sure that point is sharpened or explicit in the takeaway (even if the explanation buries it).',
+      '- If the chat resolved a clear misconception, fold the corrected rule into the takeaway.',
+      '- Do NOT turn the takeaway into a chat recap. Do NOT mention "the chat", "we discussed", "you asked", or any meta-reference to the conversation.',
+      '- If the chat is off-topic or doesn\'t add anything, ignore it and draft from the explanation alone.',
+    );
+  }
+  const userLines = [
+    'STEM:',
+    question.stem.slice(0, 4000),
+    '',
+    'CHOICES:',
+    ...question.choices.map(
+      (c) => `${c.letter}. ${c.text}${c.isCorrect ? '   [correct]' : ''}${c.isUserPick ? '   [student picked]' : ''}`,
+    ),
+    '',
+    'OFFICIAL EXPLANATION:',
+    explanation.explanationText.slice(0, 6000),
+    '',
+    `Student picked ${explanation.userLetter ?? '(unknown)'}; correct is ${explanation.correctLetter}.`,
+  ];
+  if (chatBlock) {
+    userLines.push(
+      '',
+      'CHAT TRANSCRIPT (most recent at the bottom) — use as a confusion/interest signal, do not summarize:',
+      chatBlock,
+    );
+  }
+  userLines.push('', 'Write the takeaway now — 2-4 sentences, plain prose.');
   return {
-    system: [
-      'You boil a med student\'s board question + its official explanation down to the takeaway they should remember.',
-      'Output ONE block of 2-4 short sentences in plain prose. No markdown, no labels, no headings, no bullets.',
-      'Lead with the high-yield rule. Then briefly state when/why it applies. No "the answer is…", no choice letters.',
-      'Be specific to the medical fact — generic platitudes are useless ("always consider the differential" → bad).',
-      'Cap at ~280 characters. Imperative voice is fine ("In a patient with X, do Y because Z.").',
-    ].join('\n'),
-    user: [
-      'STEM:',
-      question.stem.slice(0, 4000),
-      '',
-      'CHOICES:',
-      ...question.choices.map(
-        (c) => `${c.letter}. ${c.text}${c.isCorrect ? '   [correct]' : ''}${c.isUserPick ? '   [student picked]' : ''}`,
-      ),
-      '',
-      'OFFICIAL EXPLANATION:',
-      explanation.explanationText.slice(0, 6000),
-      '',
-      `Student picked ${explanation.userLetter ?? '(unknown)'}; correct is ${explanation.correctLetter}.`,
-      '',
-      'Write the takeaway now — 2-4 sentences, plain prose.',
-    ].join('\n'),
+    system: systemLines.join('\n'),
+    user: userLines.join('\n'),
   };
 }

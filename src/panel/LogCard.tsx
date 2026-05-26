@@ -64,6 +64,7 @@ export function LogCard() {
   const setStepbuddy = useStore((s) => s.setStepbuddy);
   const classifiedSystem = useStore((s) => s.classifiedSystem);
   const classifying = useStore((s) => s.classifying);
+  const chat = useStore((s) => s.chat);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,7 +158,7 @@ export function LogCard() {
     }
     setError(null);
     setLogForm({ rule: '', drafting: true });
-    const { system, user } = draftLearningPrompt(question, explanation);
+    const { system, user } = draftLearningPrompt(question, explanation, chat);
     streamChat(
       {
         apiKey: settings.openrouterApiKey,

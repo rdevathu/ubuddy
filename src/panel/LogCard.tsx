@@ -293,7 +293,7 @@ export function LogCard() {
           {wasCorrect ? 'Log learning' : 'Log this miss'}
         </h3>
         {question.questionId && (
-          <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+          <span style={{ fontSize: 12, color: 'var(--fg-dim)' }}>
             {sourceLabel} {isNbme ? 'ID' : 'QID'} {displayId}
           </span>
         )}
@@ -322,7 +322,7 @@ export function LogCard() {
             </option>
           ))}
         </select>
-        <div style={{ fontSize: 11, color: 'var(--fg-dim)', marginTop: 2 }}>
+        <div style={{ fontSize: 12, color: 'var(--fg-dim)', marginTop: 4 }}>
           {isOverridden ? (
             <>
               Overriding{' '}
@@ -343,7 +343,7 @@ export function LogCard() {
                   padding: 0,
                   color: 'var(--accent)',
                   cursor: 'pointer',
-                  fontSize: 11,
+                  fontSize: 12,
                 }}
               >
                 reset
@@ -391,7 +391,7 @@ export function LogCard() {
           onChange={(e) => setLogForm({ rule: e.target.value })}
           disabled={saving || logForm.drafting}
         />
-        <div style={{ fontSize: 11, color: 'var(--fg-dim)', marginTop: 4, minHeight: 16 }}>
+        <div style={{ fontSize: 12, color: 'var(--fg-dim)', marginTop: 4, minHeight: 16 }}>
           {parsedTags.length > 0 ? (
             <span>
               Tags:{' '}

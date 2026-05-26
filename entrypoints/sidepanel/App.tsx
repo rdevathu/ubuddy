@@ -420,7 +420,7 @@ export function App() {
             <div className="card">
               <div className="empty">
                 Open a UWorld, AMBOSS, or NBME question — UBuddy will pick it up automatically.
-                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--fg-dim)' }}>
+                <div style={{ marginTop: 8, fontSize: 13, color: 'var(--fg-dim)' }}>
                   Not seeing one? Try refreshing the page, or clicking Previous / Next to re-trigger UBuddy.
                 </div>
               </div>

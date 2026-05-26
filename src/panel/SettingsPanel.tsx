@@ -61,7 +61,7 @@ export function SettingsPanel() {
   }
 
   return (
-    <div className="body">
+    <div className="body body--scroll">
       <div className="card">
         <h3>OpenRouter</h3>
         <label>
@@ -73,7 +73,7 @@ export function SettingsPanel() {
             placeholder="sk-or-..."
           />
         </label>
-        <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+        <div style={{ fontSize: 12, color: 'var(--fg-dim)' }}>
           Model: <strong style={{ color: 'var(--fg)' }}>{MODEL_LABEL}</strong>{' '}
           <span style={{ opacity: 0.7 }}>({MODEL_ID})</span>
         </div>
@@ -118,7 +118,7 @@ export function SettingsPanel() {
               Sign out
             </button>
           )}
-          <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+          <span style={{ fontSize: 12, color: 'var(--fg-dim)' }}>
             {sbSignedInAs ? `Signed in as ${sbSignedInAs}` : 'Not signed in'}
           </span>
         </div>
